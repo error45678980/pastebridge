@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>贴进去 · PasteBridge — Edge 上架手册</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#f6f7fb; --card:#fff; --fg:#0f172a; --dim:#5b6478; --faint:#8b94a7;
+    --line:#e6e9f0; --line-soft:#eef1f6;
+    --blue:#2563eb; --purple:#7c3aed; --ok:#0f766e; --warn:#b45309; --err:#b91c1c;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  body{
+    background:var(--bg);color:var(--fg);font:15px/1.75 var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{display:grid;grid-template-columns:236px minmax(0,1fr);gap:48px;
+    max-width:1180px;margin:0 auto;padding:48px 32px 96px}
+
+  /* ---------- 侧栏 ---------- */
+  .nav{position:sticky;top:40px;align-self:start;font-size:13.5px}
+  .nav .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:14px;margin-bottom:18px}
+  .nav .brand i{width:9px;height:9px;border-radius:50%;
+    background:linear-gradient(135deg,var(--blue),var(--purple));box-shadow:0 0 0 3px #2563eb22}
+  .nav a{display:block;color:var(--dim);text-decoration:none;padding:6px 10px;border-radius:8px;
+    border-left:2px solid transparent;border-bottom:0;transition:.15s}
+  .nav a:hover{color:var(--fg);background:#fff}
+  .nav a.on{color:var(--blue);background:#fff;border-left-color:var(--blue);font-weight:600}
+  .nav .sep{height:1px;background:var(--line);margin:14px 10px}
+
+  /* ---------- 头部 ---------- */
+  .hero{margin-bottom:34px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;
+    background:#fff;border:1px solid var(--line);color:var(--dim);font-size:12.5px;font-weight:600}
+  .eyebrow i{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple))}
+  h1{font-size:38px;line-height:1.25;letter-spacing:-1px;margin:18px 0 12px;font-weight:800}
+  h1 em{font-style:normal;background:linear-gradient(120deg,var(--blue),var(--purple) 75%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:16px;color:var(--dim);max-width:640px}
+
+  /* ---------- 卡片 / 段落 ---------- */
+  section{margin-top:40px;scroll-margin-top:28px}
+  h2{font-size:21px;letter-spacing:-.3px;display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .num{flex:0 0 auto;width:27px;height:27px;border-radius:9px;display:grid;place-items:center;
+    color:#fff;font-size:13px;font-weight:700;background:linear-gradient(135deg,var(--blue),var(--purple))}
+  h2 .tag{font-size:11.5px;font-weight:600;color:var(--faint);letter-spacing:0;margin-left:2px}
+  h3{font-size:15.5px;margin:22px 0 8px;letter-spacing:-.1px}
+  p{color:#33405a;margin:10px 0}
+  p.dim{color:var(--dim)}
+  ul,ol{margin:10px 0 10px 20px;color:#33405a}
+  li{margin:5px 0}
+  code{font-family:var(--mono);font-size:.9em;background:#eef1f7;padding:1.5px 6px;border-radius:5px;
+    color:#1e3a8a;word-break:break-word}
+  b{font-weight:600;color:#16213a}
+  a{color:var(--blue);text-decoration:none;border-bottom:1px solid #bfdbfe}
+  a:hover{border-bottom-color:var(--blue)}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;
+    box-shadow:0 1px 2px #0f172a06}
+  .card+.card{margin-top:14px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+
+  /* ---------- 状态卡 ---------- */
+  .ready{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}
+  .ready .it{background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px 18px}
+  .ready .k{font-size:11.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--faint)}
+  .ready .v{font-size:15px;font-weight:700;margin-top:6px;display:flex;align-items:center;gap:7px}
+  .ready .v .dot{width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 0 3px #10b9811f}
+  .ready .n{font-size:12.5px;color:var(--dim);margin-top:4px;font-family:var(--mono)}
+
+  /* ---------- 代码块 ---------- */
+  .code{position:relative;background:#f8fafc;border:1px solid var(--line);border-radius:11px;
+    margin:12px 0;padding:14px 16px;padding-right:74px;font-family:var(--mono);font-size:12.8px;
+    line-height:1.72;color:#1e293b;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto}
+  .copy{position:absolute;right:9px;top:9px;font:600 11.5px var(--sans);padding:5px 10px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;color:var(--dim);cursor:pointer;transition:.15s}
+  .copy:hover{color:var(--blue);border-color:#bfdbfe;background:#f5f9ff}
+  .copy.done{color:var(--ok);border-color:#a7f3d0;background:#f0fdfa}
+
+  /* ---------- 表格 ---------- */
+  table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:13.8px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:11px 14px;vertical-align:top;border-bottom:1px solid var(--line-soft)}
+  th{background:#f8fafc;font-weight:600;font-size:12.5px;color:var(--dim);letter-spacing:.2px}
+  tr:last-child td{border-bottom:0}
+  td code{font-size:12.4px}
+
+  /* ---------- 提示条 ---------- */
+  .note{display:flex;gap:12px;padding:14px 16px;border-radius:11px;margin:14px 0;font-size:13.8px;
+    border:1px solid;line-height:1.7}
+  .note .ico{flex:0 0 auto;font-weight:800;font-size:13px;width:18px;text-align:center}
+  .note.warn{background:#fffbeb;border-color:#fde68a;color:#78350f}
+  .note.info{background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a}
+  .note.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
+  .note.ok{background:#f0fdfa;border-color:#99f6e4;color:#134e4a}
+
+  /* ---------- 清单 ---------- */
+  .check{list-style:none;margin:10px 0}
+  .check li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px dashed var(--line-soft)}
+  .check li:last-child{border-bottom:0}
+  .check input{margin-top:5px;accent-color:var(--blue);width:15px;height:15px;flex:0 0 auto}
+
+  /* ---------- 素材画廊 ---------- */
+  .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:16px}
+  .shot{background:#fff;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .shot .ph{background:#f1f4f9;display:grid;place-items:center;padding:10px}
+  .shot img{max-width:100%;display:block;border-radius:6px;box-shadow:0 4px 14px #0f172a14}
+  .shot .cap{padding:10px 14px;font-size:12.5px;color:var(--dim);display:flex;justify-content:space-between;gap:10px}
+  .shot .cap b{color:var(--fg);font-weight:600}
+  .shot .cap span{font-family:var(--mono);color:var(--faint);white-space:nowrap}
+  .wide{grid-column:1/-1}
+
+  /* ---------- 流程条 ---------- */
+  .flow{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px}
+  .flow span{padding:7px 13px;border-radius:9px;background:#fff;border:1px solid var(--line);
+    font-size:12.8px;color:var(--dim);font-weight:600}
+  .flow span b{color:var(--blue);margin-right:6px}
+
+  hr{border:0;border-top:1px solid var(--line);margin:34px 0}
+  .foot{color:var(--faint);font-size:12.5px;margin-top:40px}
+
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr;gap:0;padding:28px 18px 64px}
+    .nav{position:static;display:none}
+    .ready,.grid3,.grid2,.gallery{grid-template-columns:1fr}
+    h1{font-size:30px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <aside class="nav">
+    <div class="brand"><i></i>上架手册</div>
+    <a href="#status">现状：已备好的三样</a>
+    <a href="#local">0 · 先在 Edge 里装一遍</a>
+    <a href="#account">1 · 注册开发者账号</a>
+    <a href="#upload">2 · 上传 zip</a>
+    <a href="#meta">3 · 可用性与属性</a>
+    <a href="#privacy">4 · 隐私表单</a>
+    <a href="#listing">5 · 商店列表与素材</a>
+    <a href="#submit">6 · 认证备注与提交</a>
+    <a href="#after">7 · 审核之后</a>
+    <div class="sep"></div>
+    <a href="#risk">附录 · 风险与对策</a>
+    <a href="#files">附录 · 文件清单</a>
+  </aside>
+
+  <main>
+    <header class="hero">
+      <div class="eyebrow"><i></i>Microsoft Edge Add-ons · 提交指南</div>
+      <h1>把「贴进去」送上 <em>Edge 商店</em>的货架</h1>
+      <p class="lede">包已经打好了，图已经拍好了，台词已经写好了。剩下的是注册账号、点几个按钮、等审核。
+      全程不需要写一行代码，唯一要花钱的地方是——没有，注册免费。</p>
+      <div class="flow">
+        <span><b>①</b>侧载自测</span>
+        <span><b>②</b>注册 Partner Center</span>
+        <span><b>③</b>传 zip</span>
+        <span><b>④</b>填隐私表单</span>
+        <span><b>⑤</b>传素材写文案</span>
+        <span><b>⑥</b>提交等审核</span>
+      </div>
+    </header>
+
+    <!-- ================= 现状 ================= -->
+    <section id="status">
+      <h2><span class="num">✓</span>现状：已经备好的三样</h2>
+      <p class="dim">下面这些不用你动手，直接拿去用。</p>
+
+      <div class="ready">
+        <div class="it">
+          <div class="k">提交包</div>
+          <div class="v"><span class="dot"></span>pastebridge-1.0.0-edge.zip</div>
+          <div class="n">24 KB · 14 个文件</div>
+        </div>
+        <div class="it">
+          <div class="k">商店素材</div>
+          <div class="v"><span class="dot"></span>6 张图，尺寸全对</div>
+          <div class="n">logo 300² · 截图 ×3 · 宣传图 ×2</div>
+        </div>
+        <div class="it">
+          <div class="k">文案与表单答案</div>
+          <div class="v"><span class="dot"></span>可直接复制粘贴</div>
+          <div class="n">中英描述 · 权限理由 · 认证备注 · 隐私政策</div>
+        </div>
+      </div>
+
+      <div class="note info">
+        <span class="ico">i</span>
+        <div>截图不是设计稿拼的：脚本真的把扩展装进 Chromium，走了一遍「聚焦编辑器 → 打开弹窗 → 插入」，
+        拍的是扩展自己的界面和页面上的插入结果。审核员看到的和用户看到的是同一个东西。</div>
+      </div>
+    </section>
+
+    <!-- ================= 0 ================= -->
+    <section id="local">
+      <h2><span class="num">0</span>先在 Edge 里装一遍 <span class="tag">5 分钟 · 别跳过</span></h2>
+      <p>提交前自己先用一次，能提前撞见审核员会撞见的问题。</p>
+      <ol>
+        <li>Edge 地址栏输入 <code>edge://extensions</code></li>
+        <li>左下角打开 <b>开发人员模式</b>（Developer mode）</li>
+        <li>点 <b>加载解压缩的扩展</b>，选择项目根目录（有 <code>manifest.json</code> 的那一层）</li>
+        <li>点浏览器右上角的拼图图标，把「贴进去」<b>固定到工具栏</b></li>
+      </ol>
+      <div class="note warn">
+        <span class="ico">!</span>
+        <div>要测「禁止粘贴」的真实效果，跑一下 <code>npm run demo</code>，打开
+        <code>http://localhost:8080</code>。演示页里六个编辑器都在 capture 阶段拦了 paste，
+        先按 Ctrl+V 看计数器 +1，再用扩展插入。</div>
+      </div>
+    </section>
+
+    <!-- ================= 1 ================= -->
+    <section id="account">
+      <h2><span class="num">1</span>注册开发者账号 <span class="tag">免费 · 个人账户当天可过</span></h2>
+      <p>Edge 的扩展走 <b>Partner Center</b>，不走 Chrome 那边那套。注册不收费。</p>
+
+      <table>
+        <tr><th style="width:150px">项目</th><th>说明</th></tr>
+        <tr><td>入口</td><td><a href="https://partner.microsoft.com/dashboard/microsoftedge/public/login" target="_blank" rel="noopener">partner.microsoft.com/dashboard/microsoftedge/public/login</a></td></tr>
+        <tr><td>账号</td><td>必须是 <b>Microsoft 账户</b>（outlook.com / live.com / hotmail.com），而且得是这个 Partner Center 账户的<b>主所有者</b>。用 GitHub 账号登录也行，系统会自动给你建一个 MSA。</td></tr>
+        <tr><td>不支持</td><td>工作/学校账户（Entra 组织账号）不能用来注册。</td></tr>
+        <tr><td>账户类型</td><td>选 <b>Individual（个人）</b>。流程短，只需验证发布者名称可用。<b>注册后不能改成公司，国家/地区也不能改。</b></td></tr>
+        <tr><td>发布者名称</td><td>商店里显示的名字，最多 50 字符。建议 <code>PasteBridge</code> 或 <code>error45678980</code>。</td></tr>
+        <tr><td>协议</td><td>勾选 App Developer Agreement，点 Finish。</td></tr>
+      </table>
+
+      <div class="note info">
+        <span class="ico">i</span>
+        <div>注册后状态在 <b>Account settings → Programs</b> 里看。验证期间可以继续准备，
+        不用干等。个人账户一般几小时到一天。</div>
+      </div>
+    </section>
+
+    <!-- ================= 2 ================= -->
+    <section id="upload">
+      <h2><span class="num">2</span>上传 zip <span class="tag">2 分钟</span></h2>
+      <p>Partner Center 仪表板 → <b>Create new extension</b> → 把 <code>store/package/pastebridge-1.0.0-edge.zip</code> 拖进去。</p>
+      <ul>
+        <li>系统会<b>自动校验</b>包：manifest 是否合法、图标是否齐、权限是否写对。有错当场报，改完重传。</li>
+        <li>校验通过后点 <b>Continue</b>，进入填表流程。</li>
+        <li>包里 <code>manifest.json</code> 必须在<b>根目录</b>——已经帮你确认过了，不在任何子文件夹里。</li>
+      </ul>
+
+      <div class="note bad">
+        <span class="ico">×</span>
+        <div><b>扩展名称和简短描述在这之后就是只读的。</b>它们来自 <code>manifest.json</code> 的
+        <code>name</code> 和 <code>description</code>。想改？只能改 manifest、重新打包、重新上传。
+        所以——现在就是改文案的最后窗口，见 <code>listing-zh.md</code> 里那句建议。</div>
+      </div>
+    </section>
+
+    <!-- ================= 3 ================= -->
+    <section id="meta">
+      <h2><span class="num">3</span>可用性与属性 <span class="tag">1 分钟</span></h2>
+      <div class="grid2">
+        <div class="card">
+          <h3 style="margin-top:0">Availability</h3>
+          <p style="margin:6px 0"><b>Visibility</b>：<code>Public</code><br>
+          <span class="dim" style="font-size:13px">想先小范围试水就选 <code>Hidden</code>，只能靠直链安装，搜不到。</span></p>
+          <p style="margin:6px 0"><b>Markets</b>：全部市场（默认）</p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Properties</h3>
+          <p style="margin:6px 0"><b>Category</b>：<code>Developer tools</code></p>
+          <p style="margin:6px 0"><b>Website</b>：仓库地址</p>
+          <p style="margin:6px 0"><b>Support</b>：<code>…/issues</code></p>
+          <p style="margin:6px 0"><b>Mature content</b>：否</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 4 ================= -->
+    <section id="privacy">
+      <h2><span class="num">4</span>隐私表单 <span class="tag">审核重灾区 · 慢一点填</span></h2>
+      <p>这一步决定了你是「一周过」还是「来回三趟」。三块内容：单一用途、权限理由、数据使用。</p>
+
+      <h3>4.1 单一用途（Single purpose）</h3>
+      <div class="code" data-src>把用户提供的文本插入当前网页的代码编辑器（CodeMirror、Monaco、Ace、textarea、contenteditable），
+作为「网站禁用粘贴」时的替代输入方式。<button class="copy">复制</button></div>
+
+      <h3>4.2 权限理由（Permission justification）</h3>
+      <p class="dim">三个权限，一条都不能空着。理由要讲<b>技术上的非它不可</b>，不是「我需要它」。</p>
+
+      <div class="code" data-src>【scripting】
+用于在用户点击工具栏图标后，把 page/ 目录下的脚本注入当前标签页。
+注入必须使用 world: "MAIN"：CodeMirror / Monaco / Ace 的编辑器实例是页面脚本挂在 DOM 元素上的
+自定义属性（el.CodeMirror、el.env.editor），扩展的隔离世界读不到这些属性，也就无法调用编辑器
+自带的插入接口。注入只在用户点击图标后触发，不会在后台或页面加载时自动执行。
+
+【activeTab】
+用来替代 host_permissions，实现权限最小化。用户点击扩展图标时，浏览器才临时授予当前标签页的
+访问权；切换标签页或关闭页面后自动失效。用户不主动使用扩展时，扩展对任何网页都没有访问能力。
+
+【storage】
+把用户正在编辑的草稿和最近 10 条插入记录保存在本地 chrome.storage.local。
+因为插入时页面会抢走焦点、弹窗通常会自动关闭，没有草稿保存会直接丢失用户输入。
+只写本地，不使用 storage.sync，不涉及任何上传。<button class="copy">复制</button></div>
+
+      <h3>4.3 远程代码 / 数据使用</h3>
+      <ul>
+        <li><b>远程代码</b>：选 <b>否</b>。所有逻辑都在 zip 里，没有 eval、没有动态 import。</li>
+        <li><b>数据使用</b>：九项<b>全部不勾</b>。草稿和历史只写本地，不传输，所以算「不收集」。</li>
+      </ul>
+      <div class="note ok">
+        <span class="ico">✓</span>
+        <div>「没有 host_permissions + 只在点击图标时拿 activeTab」是这个扩展最大的合规优势。
+        在单一用途和权限理由里主动讲出来，审核员会明显省事。</div>
+      </div>
+
+      <h3>4.4 隐私政策 URL</h3>
+      <p>必填。文件已经写好在 <code>store/privacy-policy.md</code>，中英双语。把它变成一个网址，三种做法：</p>
+      <table>
+        <tr><th style="width:130px">做法</th><th>地址长什么样</th><th style="width:120px">耗时</th></tr>
+        <tr><td><b>A · GitHub 直链</b></td><td><code>github.com/error45678980/pastebridge/blob/main/store/privacy-policy.md</code></td><td>推完即用</td></tr>
+        <tr><td><b>B · GitHub Pages</b></td><td><code>error45678980.github.io/pastebridge/privacy.html</code></td><td>约 5 分钟</td></tr>
+        <tr><td><b>C · 自有域名</b></td><td>你的站</td><td>最稳</td></tr>
+      </table>
+      <div class="note warn">
+        <span class="ico">!</span>
+        <div>不管选哪个，<b>提交前用无痕窗口打开确认能访问</b>。需要登录才看得到的地址会被打回。</div>
+      </div>
+    </section>
+
+    <!-- ================= 5 ================= -->
+    <section id="listing">
+      <h2><span class="num">5</span>商店列表与素材 <span class="tag">每个语言都要传 logo</span></h2>
+
+      <h3>5.1 尺寸与限制</h3>
+      <table>
+        <tr><th style="width:170px">素材</th><th style="width:190px">规格</th><th>要求</th></tr>
+        <tr><td>扩展 logo</td><td>300 × 300，1:1<br><span class="dim">最小 128×128</span></td><td><b>每个语言必填</b></td></tr>
+        <tr><td>截图</td><td>1280 × 800 或 640 × 480</td><td>可选，最多 6 张，强烈建议传</td></tr>
+        <tr><td>小宣传图</td><td>440 × 280</td><td>可选</td></tr>
+        <tr><td>大宣传图</td><td>1400 × 560，PNG</td><td>可选，首页推荐位用</td></tr>
+        <tr><td>详细描述</td><td>250 – 10,000 字符</td><td>每个语言必填</td></tr>
+        <tr><td>搜索词</td><td>最多 7 个词，每个 ≤30 字符，合计 ≤21 单词</td><td>可选，但不填等于放弃搜索流量</td></tr>
+      </table>
+
+      <h3>5.2 素材已经生成好了</h3>
+      <div class="gallery">
+        <div class="shot">
+          <div class="ph"><img src="assets/screenshot-1-1280x800.png" alt="主视觉截图"></div>
+          <div class="cap"><b>01 · 主视觉</b><span>1280×800</span></div>
+        </div>
+        <div class="shot">
+          <div class="ph"><img src="assets/screenshot-2-1280x800.png" alt="实测截图"></div>
+          <div class="cap"><b>02 · 六种编辑器实测</b><span>1280×800</span></div>
+        </div>
+        <div class="shot">
+          <div class="ph"><img src="assets/screenshot-3-1280x800.png" alt="历史面板截图"></div>
+          <div class="cap"><b>03 · 草稿与历史</b><span>1280×800</span></div>
+        </div>
+        <div class="shot">
+          <div class="ph"><img src="assets/logo-300.png" alt="Logo" style="width:180px"></div>
+          <div class="cap"><b>Logo</b><span>300×300</span></div>
+        </div>
+        <div class="shot wide">
+          <div class="ph"><img src="assets/large-promo-1400x560.png" alt="大宣传图"></div>
+          <div class="cap"><b>大宣传图</b><span>1400×560</span></div>
+        </div>
+        <div class="shot wide">
+          <div class="ph"><img src="assets/small-promo-440x280.png" alt="小宣传图" style="width:440px"></div>
+          <div class="cap"><b>小宣传图</b><span>440×280</span></div>
+        </div>
+      </div>
+
+      <h3>5.3 文案</h3>
+      <p>中文长描述、搜索词都在 <code>listing-zh.md</code>，整段复制即可。英文版在 <code>listing-en.md</code>。</p>
+      <div class="note info">
+        <span class="ico">i</span>
+        <div><b>语言行只有一个？</b>因为包里没有 <code>_locales</code> 目录，Partner Center 只会给一个语言行。
+        最省事的做法：这一行直接填中文。想同时挂中英两行，得给包加 i18n ——
+        步骤写在 <code>listing-en.md</code> 末尾。</div>
+      </div>
+    </section>
+
+    <!-- ================= 6 ================= -->
+    <section id="submit">
+      <h2><span class="num">6</span>认证备注与提交 <span class="tag">通过率的胜负手</span></h2>
+      <p><b>Notes for certification</b> 是给审核员看的手册。这个扩展有个特点：不点图标就什么都看不到。
+      不写清楚，审核员很可能打开页面、发现没反应、直接判「功能不工作」。</p>
+
+      <div class="code" data-src>这是一个开发者工具：当网页上的代码编辑器禁用了粘贴，用户可以点击扩展图标，
+把文本直接插入编辑器。
+
+【为什么必须先点击图标】
+扩展没有 host_permissions，只申请了 activeTab。这是刻意的权限最小化设计：
+在用户点击工具栏图标之前，扩展对任何网页都没有访问权限。
+所以测试时请先点击图标，再观察效果 —— 这不是功能缺陷。
+
+【约 2 分钟的测试步骤】
+1. 打开 https://codemirror.net/try/  （CodeMirror 6 官方示例页）
+2. 在编辑器里点一下，让光标落在代码区
+3. 点击工具栏上的「贴进去」图标。弹窗打开后，顶部状态标签会显示识别结果，
+   例如「已聚焦 CodeMirror 6」
+4. 在弹窗的输入框里粘贴一段文字，例如：console.log('hello')
+5. 点击「插入」按钮，或按 Ctrl + Enter
+6. 文字应当出现在编辑器里；页面右下角出现绿色提示条；
+   弹窗可能自动关闭 —— 因为插入时页面抢走了焦点，这是正常现象
+7. 再次点击图标，点「历史」按钮，可以看到刚才那次插入记录
+
+【其他可测站点】
+· Monaco —— https://microsoft.github.io/monaco-editor/playground.html
+· Ace    —— https://ace.c9.io/
+· 普通输入框 —— 任意包含 textarea 的网页
+
+【以下情况显示失败是预期行为，不是 bug】
+· 在 edge:// 开头的页面、Edge 加载项商店、PDF 阅读器上，任何扩展都无法注入，
+  弹窗会显示「受限页面」
+· 页面里只有 iframe 内的编辑器时，v1 不支持，弹窗会明确提示
+· 只读编辑器会被识别出来并跳过
+
+【隐私】
+扩展不发起任何网络请求。草稿和历史只写入本地 chrome.storage.local。
+没有远程代码、没有分析统计、没有第三方 SDK。<button class="copy">复制</button></div>
+
+      <h3>提交前最后一遍</h3>
+      <ul class="check">
+        <li><input type="checkbox"><span>zip 里 <code>manifest.json</code> 在根目录</span></li>
+        <li><input type="checkbox"><span>每个语言都传了 300×300 的 logo</span></li>
+        <li><input type="checkbox"><span>详细描述 ≥ 250 字符（复制过去就够）</span></li>
+        <li><input type="checkbox"><span>三个权限的理由都填了，没有留空</span></li>
+        <li><input type="checkbox"><span>隐私政策 URL 在无痕窗口里打得开</span></li>
+        <li><input type="checkbox"><span>Notes 里的测试网址你自己点得开</span></li>
+        <li><input type="checkbox"><span>自己在 Edge 里侧载试过一遍</span></li>
+      </ul>
+      <p>点 <b>Submit</b>。之后状态会从 <code>In review</code> 走。</p>
+    </section>
+
+    <!-- ================= 7 ================= -->
+    <section id="after">
+      <h2><span class="num">7</span>审核之后</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3 style="margin-top:0">通过了</h3>
+          <p style="margin:8px 0">扩展会出现在 Edge 加载项商店，用户搜得到、装得上，后续版本自动更新。
+          首次审核一般 <b>1–7 个工作日</b>。</p>
+          <p style="margin:8px 0" class="dim">可以在详情页补宣传图、改描述——这些不用重新传包。</p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">被拒了</h3>
+          <p style="margin:8px 0">不封号。邮件会指到具体条款，改完重新提交即可。</p>
+          <p style="margin:8px 0" class="dim">最常见的两类：权限理由写得太敷衍、单一用途描述太宽。对策见附录。</p>
+        </div>
+      </div>
+
+      <h3>发新版本</h3>
+      <p>改完代码，把 <code>manifest.json</code> 的 <code>version</code> 加一，然后：</p>
+      <div class="code" data-src>python store/build-package.py<button class="copy">复制</button></div>
+      <p class="dim">把新 zip 传到 <b>Packages</b> 页，提交。版本号必须比上一版大，否则会被拦。</p>
+    </section>
+
+    <hr>
+
+    <!-- ================= 风险 ================= -->
+    <section id="risk">
+      <h2><span class="num">!</span>附录 · 五个风险与对策</h2>
+
+      <h3>① 「绕过」这个词</h3>
+      <p>商店里能搜到 <i>Bypass Quora Pop-ups</i> 这类扩展，说明「bypass」本身不是红线。
+      但描述里不要出现<b>破解、付费墙、反检测、去水印</b>这类词——那才是真雷区。</p>
+      <p>已经在 <code>listing-zh.md</code> 里把措辞软化成「替代输入方式」，
+      并给了一句更温和的简短描述建议。要改的话现在改，上传后就只读了。</p>
+
+      <h3>② 审核员可能「测不出功能」</h3>
+      <p>没有 <code>host_permissions</code> 意味着：不点图标，扩展什么都做不了。
+      审核员如果按常规套路打开页面等效果，会以为它坏了。</p>
+      <p><b>对策</b>：Notes for certification 里把「必须先点图标」放在第一段，配 2 分钟分步流程。</p>
+
+      <h3>③ 没有公网演示页</h3>
+      <p>你的 <code>demo/</code> 只能在本地跑。审核员不会 <code>npm run demo</code>。</p>
+      <p><b>对策</b>：Notes 里用了三个公开可访问的官方示例页（CodeMirror、Monaco、Ace），
+      足够验证插入能力。想把自家演示页也放上去，就发 GitHub Pages：</p>
+      <div class="code" data-src># 把 demo 复制成 docs，GitHub Pages 从 /docs 发布
+cp -r demo docs
+git add docs store && git commit -m "chore: 商店素材与演示页"
+git push
+# 然后 仓库 → Settings → Pages → Source: main / docs<button class="copy">复制</button></div>
+      <div class="note warn">
+        <span class="ico">!</span>
+        <div>这一步会推到 GitHub 公开仓库，<b>先确认你愿意公开这些文件</b>。
+        <code>store/</code> 里没有敏感信息，但推送前还是自己扫一眼。</div>
+      </div>
+
+      <h3>④ iframe 与自研编辑器</h3>
+      <p>v1 不支持 iframe 里的编辑器。描述里已经写成「已知限制」——
+      <b>主动交代限制</b>比被审核员发现要安全得多，也少一堆差评。</p>
+
+      <h3>⑤ 版本号与包一致性</h3>
+      <p>每次重传 zip，<code>version</code> 必须递增。忘了改会直接卡在提交环节。
+      <code>build-package.py</code> 的文件名带版本号，扫一眼就知道传的是哪个。</p>
+    </section>
+
+    <!-- ================= 文件 ================= -->
+    <section id="files">
+      <h2><span class="num">≡</span>附录 · 文件清单</h2>
+      <table>
+        <tr><th style="width:270px">文件</th><th>用途</th></tr>
+        <tr><td><code>package/pastebridge-1.0.0-edge.zip</code></td><td><b>要上传的东西</b>，24 KB，14 个文件</td></tr>
+        <tr><td><code>assets/logo-300.png</code></td><td>商店 logo，每个语言必填</td></tr>
+        <tr><td><code>assets/screenshot-1..3-1280x800.png</code></td><td>商店截图，三张</td></tr>
+        <tr><td><code>assets/small-promo-440x280.png</code></td><td>小宣传图（可选）</td></tr>
+        <tr><td><code>assets/large-promo-1400x560.png</code></td><td>大宣传图（可选）</td></tr>
+        <tr><td><code>listing-zh.md</code></td><td>中文文案：长描述、搜索词、分类</td></tr>
+        <tr><td><code>listing-en.md</code></td><td>英文文案 + 加 i18n 的步骤</td></tr>
+        <tr><td><code>partner-center-answers.md</code></td><td>填表答案总表（权限理由、数据使用、认证备注）</td></tr>
+        <tr><td><code>privacy-policy.md</code></td><td>中英双语隐私政策，顶部写了怎么变成网址</td></tr>
+        <tr><td><code>build-package.py</code></td><td>重新打包（改完版本号就跑它）</td></tr>
+        <tr><td><code>build-assets.mjs</code></td><td>重新生成所有素材（改了 UI 就跑它）</td></tr>
+      </table>
+
+      <div class="note info">
+        <span class="ico">i</span>
+        <div>两个脚本都是幂等的：<code>build-package.py</code> 固定了 zip 内部时间戳，
+        同样的代码永远产出同样的包；<code>build-assets.mjs</code> 每次重新拍图，不会累积旧文件。</div>
+      </div>
+    </section>
+
+    <p class="foot">贴进去 · PasteBridge — Edge 上架手册 · 2026-10-25</p>
+  </main>
+</div>
+
+<script>
+  /* 代码块复制：file:// 下 navigator.clipboard 可能不可用，退回 execCommand */
+  document.querySelectorAll('.code[data-src]').forEach(function (block) {
+    var btn = block.querySelector('.copy');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var text = block.textContent.replace(/复制$/, '').trim();
+      var done = function () {
+        btn.textContent = '已复制';
+        btn.classList.add('done');
+        setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('done'); }, 1600);
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
+      }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = '请手动选中'; }
+        document.body.removeChild(ta);
+      }
+    });
+  });
+
+  /* 侧栏高亮 */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.nav a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+  function sync() {
+    var y = window.scrollY + 120, idx = 0;
+    secs.forEach(function (s, i) { if (s && s.offsetTop <= y) idx = i; });
+    links.forEach(function (a, i) { a.classList.toggle('on', i === idx); });
+  }
+  window.addEventListener('scroll', sync, { passive: true });
+  sync();
+</script>
+</body>
+</html>

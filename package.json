@@ -7,7 +7,10 @@
     "icons": "python tools/make-icons.py",
     "demo": "python -m http.server 8080 --directory demo",
     "test": "node tests/e2e.mjs",
-    "test:ext": "node tests/extension.mjs"
+    "test:ext": "node tests/extension.mjs",
+    "test:store": "node tests/store.mjs",
+    "test:typing": "node tests/typing.mjs",
+    "test:all": "node tests/store.mjs && node tests/typing.mjs && node tests/e2e.mjs && node tests/extension.mjs"
   },
   "devDependencies": {
     "playwright": "^1.64.1"

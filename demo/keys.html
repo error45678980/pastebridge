@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>贴进去 · 只认 keydown 的编辑器</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f6f7f9;
+        color: #111827;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+      }
+
+      .top {
+        padding: 16px 22px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 16px;
+      }
+
+      .top p {
+        margin: 0;
+        max-width: 860px;
+        font-size: 12.5px;
+        color: #6b7280;
+      }
+
+      .wrap {
+        padding: 16px 22px 28px;
+        max-width: 900px;
+      }
+
+      .panel {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .head {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border-bottom: 1px solid #eef0f3;
+        font-size: 12px;
+      }
+
+      .head code {
+        color: #9ca3af;
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .kb {
+        min-height: 130px;
+        margin: 12px;
+        padding: 10px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        outline: none;
+        font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .kb:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      }
+
+      .stat {
+        padding: 0 12px 12px;
+        font-size: 11.5px;
+        color: #6b7280;
+      }
+
+      .stat b {
+        color: #111827;
+      }
+
+      .foot {
+        padding: 14px 22px 26px;
+        font-size: 12px;
+        color: #6b7280;
+      }
+
+      .foot a {
+        color: #2563eb;
+        text-decoration: none;
+        margin-right: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>只认 keydown 的编辑器（终端 / 画布类的替身）</h1>
+        <p>
+          这个框会 <code>preventDefault()</code> 掉所有 <code>beforeinput</code>，所以
+          <code>execCommand</code> 和 <code>Input.insertText</code> 都写不进去。
+          它只认真正的 <code>keydown</code>——这正是「键盘模拟 → 逐字模式」要覆盖的场景。
+        </p>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="panel">
+        <div class="head"><b>keydown-only 编辑器</b><code>#kb</code></div>
+        <div class="kb" id="kb" contenteditable="true" spellcheck="false"></div>
+        <div class="stat">
+          模型长度 <b id="len">0</b> · beforeinput 被拦截 <b id="blocked">0</b> 次 ·
+          keydown <b id="keys">0</b> 次
+        </div>
+      </section>
+
+      <div class="foot">
+        <a href="./index.html">← 代码编辑器演示</a>
+        <a href="./rich.html">富文本夹具 →</a>
+      </div>
+    </main>
+
+    <script>
+      (() => {
+        const el = document.getElementById('kb');
+        const lenEl = document.getElementById('len');
+        const blockedEl = document.getElementById('blocked');
+        const keysEl = document.getElementById('keys');
+
+        let model = '';
+        let blocked = 0;
+        let keys = 0;
+
+        function render() {
+          // 只用来显示模型；真实终端会把字画到 canvas 上
+          el.textContent = model;
+          lenEl.textContent = String(model.length);
+          blockedEl.textContent = String(blocked);
+          keysEl.textContent = String(keys);
+        }
+
+        // 拒绝一切「文本插入」——execCommand / Input.insertText 都会走这里
+        el.addEventListener('beforeinput', (e) => {
+          e.preventDefault();
+          blocked++;
+          blockedEl.textContent = String(blocked);
+        });
+
+        // 只认按键
+        el.addEventListener('keydown', (e) => {
+          keys++;
+          if (e.key === 'Enter') {
+            model += '\n';
+            e.preventDefault();
+          } else if (e.key.length === 1) {
+            model += e.key;
+            e.preventDefault();
+          } else {
+            render();
+            return;
+          }
+          render();
+        });
+
+        render();
+
+        window.__keys = {
+          ready: true,
+          getValue: () => model,
+          reset: () => {
+            model = '';
+            blocked = 0;
+            keys = 0;
+            render();
+          },
+          stats: () => ({ blocked: blocked, keys: keys })
+        };
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>贴进去 · 工作台</title>
+    <link rel="stylesheet" href="workbench.css" />
+  </head>
+  <body>
+    <header class="hd">
+      <div class="brand"><span class="dot" aria-hidden="true"></span><span>贴进去 · 工作台</span></div>
+      <div class="search">
+        <input id="q" type="search" placeholder="搜索剪贴板与片段…（/ 聚焦）" autocomplete="off" />
+      </div>
+      <div class="acts">
+        <button id="readClip" class="btn">读取剪贴板</button>
+        <button id="grabSel" class="btn">抓取选区</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <nav class="side">
+        <button class="nav on" data-view="history">历史 <span id="cHistory" class="cnt">0</span></button>
+        <button class="nav" data-view="snippets">片段 <span id="cSnip" class="cnt">0</span></button>
+        <button class="nav" data-view="settings">设置</button>
+        <div class="side-foot">
+          <div id="usage" class="usage">—</div>
+          <div id="tabInfo" class="tabinfo"></div>
+        </div>
+      </nav>
+
+      <section class="main">
+        <div id="filters" class="filters">
+          <button class="chip on" data-filter="all">全部</button>
+          <button class="chip" data-filter="pin">置顶</button>
+          <button class="chip" data-filter="code">代码</button>
+          <button class="chip" data-filter="link">链接</button>
+          <button class="chip" data-filter="site">来自本页</button>
+          <span class="grow"></span>
+          <button id="clearAll" class="chip danger">清空历史</button>
+        </div>
+
+        <ul id="list" class="list"></ul>
+        <div id="empty" class="empty hidden"></div>
+
+        <div id="settingsView" class="settings hidden"></div>
+      </section>
+    </main>
+
+    <div id="editor" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-box">
+        <div class="modal-hd">
+          <b id="edTitle">新建片段</b>
+          <button id="edClose" class="x" aria-label="关闭">×</button>
+        </div>
+        <div class="grid2">
+          <label>名称<input id="edName" type="text" placeholder="比如：常用请求头" /></label>
+          <label>语言<input id="edLang" type="text" placeholder="js / python / sql …" /></label>
+        </div>
+        <label>标签<input id="edTags" type="text" placeholder="用逗号分隔，比如：http,调试" /></label>
+        <label>内容<textarea id="edBody" spellcheck="false" placeholder="片段正文…"></textarea></label>
+        <div class="modal-ft">
+          <span id="edHint" class="hint"></span>
+          <button id="edSave" class="btn primary">保存片段</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="../lib/store.js"></script>
+    <script src="workbench.js"></script>
+  </body>
+</html>

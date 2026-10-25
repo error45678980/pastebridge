@@ -177,6 +177,33 @@ body {
   opacity: 1;
 }
 
+.meta-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.linkbtn {
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.linkbtn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.linkbtn.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 /* ---------- 底部 ---------- */
 
 .ft {
@@ -187,6 +214,34 @@ body {
 .row {
   display: flex;
   gap: 8px;
+}
+
+.row2 {
+  margin-top: 8px;
+}
+
+.row2 .btn {
+  flex: 1 1 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.btn.wide {
+  width: 100%;
+  margin-top: 8px;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
+.btn.wide:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.hidden {
+  display: none !important;
 }
 
 .btn {

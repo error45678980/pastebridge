@@ -7,10 +7,13 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const PB_FILES = require('../lib/files.js');
 const DEMO = path.join(ROOT, 'demo');
 
 const MIME = {
@@ -84,8 +87,8 @@ await page.waitForFunction(() => window.__demo && window.__demo.ready, null, { t
 const status = await page.evaluate(() => window.__demo.status);
 console.log('  编辑器加载状态:', JSON.stringify(status));
 
-for (const f of ['core', 'detect', 'insert', 'picker', 'main']) {
-  await page.addScriptTag({ path: path.join(ROOT, 'page', f + '.js') });
+for (const f of PB_FILES.page) {
+  await page.addScriptTag({ path: path.join(ROOT, f) });
 }
 
 const pre = await page.evaluate(() => window.__WB__.run({ op: 'precheck' }));
@@ -95,9 +98,11 @@ console.log(
   pre.choices.map((c) => `${c.i}:${c.kind}#${c.nth}(${Math.round(c.score)})`).join(' ')
 );
 
+/* 用 {kind, nth} 定位目标，而不是数组下标——
+ * 候选列表会随焦点变化重新过滤，下标会漂移。 */
 const indexOf = (kind) => {
   const c = pre.choices.find((x) => x.kind === kind);
-  return c ? c.i : null;
+  return c ? { kind: c.kind, nth: c.nth } : null;
 };
 
 const results = [];
@@ -220,6 +225,219 @@ try {
   pickerResult.note = e.message;
 }
 results.push({ kind: 'picker', case: '多候选点选', ok: pickerResult.ok, note: pickerResult.note });
+
+/* ---------------- 富文本 / 聊天框场地 ---------------- */
+
+const RICH_KINDS = ['pm', 'lexical', 'slate', 'draft', 'quill', 'ck5', 'tinymce', 'ce', 'textarea', 'input'];
+
+const richPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+richPage.setDefaultTimeout(90000);
+richPage.on('pageerror', (e) => pageErrors.push('rich pageerror: ' + e.message));
+richPage.on('console', (m) => {
+  if (m.type() === 'error') pageErrors.push('rich console: ' + m.text());
+});
+
+await richPage.goto(`http://127.0.0.1:${PORT}/rich.html`, { waitUntil: 'domcontentloaded' });
+await richPage.waitForFunction(() => window.__rich && window.__rich.ready, null, { timeout: 15000 });
+for (const f of PB_FILES.page) {
+  await richPage.addScriptTag({ path: path.join(ROOT, f) });
+}
+
+// 单行输入框只在聚焦时才参与候选（防站点搜索框刷屏），所以先点它一下
+await richPage.focus('#single');
+const preRich = await richPage.evaluate(() => window.__WB__.run({ op: 'precheck' }));
+console.log(
+  '  富文本识别到 %d 个候选: %s',
+  preRich.count,
+  preRich.choices.map((c) => `${c.i}:${c.kind}#${c.nth}(${Math.round(c.score)})`).join(' ')
+);
+
+const richIndexOf = (kind) => {
+  const c = preRich.choices.find((x) => x.kind === kind);
+  return c ? { kind: c.kind, nth: c.nth } : null;
+};
+
+const RICH_CASES = [
+  { name: '单行', code: 'const answer = 42;' },
+  { name: '多行 3 行', code: '第一行\n第二行\n第三行' },
+  { name: '代码块 8 行', code: 'function hello() {\n  const a = 1;\n  const b = 2;\n  return a + b;\n}\n\nhello();\n// end' }
+];
+
+for (const kind of RICH_KINDS) {
+  const idx = richIndexOf(kind);
+  if (idx == null) {
+    results.push({ kind, case: '-', ok: false, note: '未识别到该编辑器' });
+    continue;
+  }
+  for (const c of RICH_CASES) {
+    await richPage.evaluate((k) => window.__rich.setValue(k, ''), kind);
+    const r = await richPage.evaluate(
+      ({ code, i }) => window.__WB__.run({ op: 'insert', code, choice: i }),
+      { code: c.code, i: idx }
+    );
+    const doc = await richPage.evaluate((k) => window.__rich.getValue(k), kind);
+
+    // 单行框会把换行换成空格，这是设计行为，不算失败
+    const expect = kind === 'input' ? c.code.replace(/\n/g, ' ') : c.code;
+    const got = String(doc || '');
+    const ok = !!(r && r.ok) && (kind === 'input' ? got.includes(expect) : norm(got).includes(norm(expect)));
+
+    results.push({
+      kind,
+      case: c.name,
+      ok,
+      method: r && r.method,
+      verified: r && r.verified,
+      note: ok ? '' : (r && r.reason) || '内容不匹配: ' + JSON.stringify(got.slice(0, 60))
+    });
+  }
+}
+
+/* ---------------- 聊天框：插入不能触发发送 ---------------- */
+
+let chatResult = { ok: false, note: '' };
+try {
+  const chatPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  chatPage.on('pageerror', (e) => pageErrors.push('chat pageerror: ' + e.message));
+  await chatPage.goto(`http://127.0.0.1:${PORT}/chat.html`, { waitUntil: 'domcontentloaded' });
+  await chatPage.waitForFunction(() => window.__chat && window.__chat.ready, null, { timeout: 15000 });
+  for (const f of PB_FILES.page) {
+    await chatPage.addScriptTag({ path: path.join(ROOT, f) });
+  }
+
+  const pre = await chatPage.evaluate(() => window.__WB__.run({ op: 'precheck' }));
+  const code = 'function hello() {\n  return 1;\n}\nconst tail = 2;';
+  const r = await chatPage.evaluate(
+    ({ c }) => window.__WB__.run({ op: 'insert', code: c, choice: 0 }),
+    { c: code }
+  );
+  const sent = await chatPage.evaluate(() => window.__chat.sent.pm + window.__chat.sent.textarea);
+  const msgs = await chatPage.evaluate(() => window.__chat.messageCount('pm'));
+  const value = await chatPage.evaluate(() => window.__chat.getValue('pm'));
+
+  chatResult.ok = !!(r && r.ok) && sent === 0 && msgs === 0 && String(value).includes('const tail = 2;');
+  chatResult.note = `发送 ${sent} 条 · 消息 ${msgs} 条 · ${(r && r.method) || '-'} · ${pre.count} 候选`;
+  await chatPage.close();
+} catch (e) {
+  chatResult.note = e.message;
+}
+results.push({ kind: 'chat', case: '回车不误触', ok: chatResult.ok, note: chatResult.note });
+
+/* ---------------- Markdown 包裹：只包聊天框，不包代码编辑器 ---------------- */
+
+let mdChat = { ok: false, note: '' };
+try {
+  const idx = richIndexOf('pm');
+  await richPage.evaluate(() => window.__rich.setValue('pm', ''));
+  await richPage.evaluate(
+    ({ i }) =>
+      window.__WB__.run({
+        op: 'insert',
+        code: 'const a = 1;',
+        choice: i,
+        md: { on: true, lang: 'js' }
+      }),
+    { i: idx }
+  );
+  const got = await richPage.evaluate(() => window.__rich.getValue('pm'));
+  mdChat.ok = got.indexOf('```js') === 0 && got.trim().slice(-3) === '```' && got.includes('const a = 1;');
+  mdChat.note = JSON.stringify(got);
+} catch (e) {
+  mdChat.note = e.message;
+}
+results.push({ kind: 'md', case: '聊天框包裹', ok: mdChat.ok, note: mdChat.note });
+
+let mdCode = { ok: false, note: '' };
+try {
+  const idx = indexOf('cm6');
+  await page.evaluate(() => window.__demo.setValue('cm6', ''));
+  await page.evaluate(
+    ({ i }) =>
+      window.__WB__.run({
+        op: 'insert',
+        code: 'const b = 2;',
+        choice: i,
+        md: { on: true, lang: 'js' }
+      }),
+    { i: idx }
+  );
+  const got = await page.evaluate(() => window.__demo.getValue('cm6'));
+  mdCode.ok = got.includes('const b = 2;') && got.indexOf('```') < 0;
+  mdCode.note = JSON.stringify(got);
+} catch (e) {
+  mdCode.note = e.message;
+}
+results.push({ kind: 'md', case: '代码框不包裹', ok: mdCode.ok, note: mdCode.note });
+
+/* ---------------- 失败分类字段（v2.1 新增） ---------------- */
+
+{
+  const idx = indexOf('cm6');
+  await page.evaluate(() => window.__demo.setValue('cm6', ''));
+  const r = await page.evaluate(
+    ({ i }) => window.__WB__.run({ op: 'insert', code: 'ATTEMPTS_OK', choice: i }),
+    { i: idx }
+  );
+  const ok =
+    !!(r && r.ok) && Array.isArray(r.attempts) && r.attempts.length > 0 && r.partial === false;
+  results.push({
+    kind: 'meta',
+    case: 'attempts 字段',
+    ok,
+    note: JSON.stringify(r && r.attempts)
+  });
+}
+
+/* ---------------- 盲插：closed shadow DOM ----------------
+ * detect() 只穿透 open shadow root，所以这两个框对扩展来说「不存在」。
+ * 盲插是它们唯一的机会：execCommand 作用于文档焦点，不受 shadow 边界限制。
+ */
+
+let blindResult = { ok: false, note: '' };
+try {
+  const closedPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  closedPage.on('pageerror', (e) => pageErrors.push('closed pageerror: ' + e.message));
+  await closedPage.goto(`http://127.0.0.1:${PORT}/closed.html`, { waitUntil: 'domcontentloaded' });
+  await closedPage.waitForFunction(() => window.__closed && window.__closed.ready, null, {
+    timeout: 15000
+  });
+  for (const f of PB_FILES.page) {
+    await closedPage.addScriptTag({ path: path.join(ROOT, f) });
+  }
+
+  const isClosed = await closedPage.evaluate(() => window.__closed.shadowIsClosed());
+  const pre = await closedPage.evaluate(() => window.__WB__.run({ op: 'precheck' }));
+
+  await closedPage.evaluate(() => window.__closed.focusCe());
+  const rCe = await closedPage.evaluate(() =>
+    window.__WB__.run({ op: 'blind', code: 'BLIND_CE_OK' })
+  );
+  const ceVal = await closedPage.evaluate(() => window.__closed.getCe());
+
+  await closedPage.evaluate(() => window.__closed.focusTa());
+  const rTa = await closedPage.evaluate(() =>
+    window.__WB__.run({ op: 'blind', code: 'BLIND_TA_OK' })
+  );
+  const taVal = await closedPage.evaluate(() => window.__closed.getTa());
+
+  const ok =
+    isClosed &&
+    pre.count === 0 &&
+    ceVal.includes('BLIND_CE_OK') &&
+    taVal.includes('BLIND_TA_OK') &&
+    rCe.ok === true &&
+    rTa.ok === true;
+
+  blindResult.ok = ok;
+  blindResult.note =
+    `shadow=${isClosed ? 'closed' : 'OPEN?'} · 识别 ${pre.count} 个 · ` +
+    `ce=${rCe.verified}/${ceVal.includes('BLIND_CE_OK')} · ` +
+    `ta=${rTa.verified}/${taVal.includes('BLIND_TA_OK')}`;
+  await closedPage.close();
+} catch (e) {
+  blindResult.note = e.message;
+}
+results.push({ kind: 'blind', case: 'closed shadow', ok: blindResult.ok, note: blindResult.note });
 
 /* ---------------- 报告 ---------------- */
 

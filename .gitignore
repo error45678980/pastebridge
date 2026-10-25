@@ -5,3 +5,4 @@ tests/popup.png
 *.log
 .DS_Store
 Thumbs.db
+store/package/

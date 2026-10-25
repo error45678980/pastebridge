@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>贴进去 · 聊天框演示（回车即发送）</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f6f7f9;
+        color: #111827;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+      }
+
+      .top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 16px 22px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 16px;
+      }
+
+      .top p {
+        margin: 0;
+        max-width: 860px;
+        font-size: 12.5px;
+        color: #6b7280;
+      }
+
+      .badge {
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: #f0fdfa;
+        border: 1px solid #99f6e4;
+        color: #0f766e;
+        font-size: 11.5px;
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
+
+      .badge.bad {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #b91c1c;
+      }
+
+      .wrap {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        padding: 16px 22px 28px;
+        max-width: 1200px;
+      }
+
+      @media (max-width: 900px) {
+        .wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .chat {
+        display: flex;
+        flex-direction: column;
+        height: 420px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .chat-hd {
+        padding: 9px 13px;
+        border-bottom: 1px solid #eef0f3;
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .chat-hd code {
+        color: #9ca3af;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+      }
+
+      .msgs {
+        flex: 1;
+        overflow: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: #fafbfc;
+      }
+
+      .msg {
+        align-self: flex-end;
+        max-width: 86%;
+        padding: 8px 11px;
+        border-radius: 10px 10px 2px 10px;
+        background: #2563eb;
+        color: #fff;
+        font-size: 12.5px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .empty {
+        align-self: center;
+        margin: auto;
+        color: #9ca3af;
+        font-size: 12px;
+      }
+
+      .composer {
+        border-top: 1px solid #eef0f3;
+        padding: 10px 12px;
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+      }
+
+      .box {
+        flex: 1;
+        min-height: 46px;
+        max-height: 120px;
+        overflow: auto;
+        padding: 8px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 9px;
+        outline: none;
+        font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      .box:focus {
+        border-color: #2563eb;
+      }
+
+      textarea.box {
+        resize: none;
+      }
+
+      .send {
+        flex: 0 0 auto;
+        padding: 9px 16px;
+        border: 0;
+        border-radius: 9px;
+        background: #2563eb;
+        color: #fff;
+        font: inherit;
+        font-size: 12.5px;
+        cursor: pointer;
+      }
+
+      .hint {
+        padding: 0 22px 26px;
+        font-size: 12px;
+        color: #6b7280;
+      }
+
+      .hint a {
+        color: #2563eb;
+        text-decoration: none;
+        margin-right: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>聊天框夹具：回车即发送</h1>
+        <p>
+          两个输入框都监听 <code>keydown</code>，按下回车（不带 Shift）就发送并清空。
+          插入多行代码时如果误触了回车，右侧计数会立刻变红——这是 v2 必须守住的底线。
+        </p>
+      </div>
+      <span class="badge" id="sentBadge">已发送 0 条</span>
+    </header>
+
+    <main class="wrap">
+      <section class="chat" data-kind="pm">
+        <div class="chat-hd"><b>富文本聊天框</b><code>.ProseMirror</code></div>
+        <div class="msgs" id="msgs-pm"><span class="empty">还没有消息</span></div>
+        <div class="composer">
+          <div class="box ProseMirror" id="pm" contenteditable="true" spellcheck="false"></div>
+          <button class="send" id="send-pm">发送</button>
+        </div>
+      </section>
+
+      <section class="chat" data-kind="textarea">
+        <div class="chat-hd"><b>多行文本框聊天框</b><code>textarea</code></div>
+        <div class="msgs" id="msgs-ta"><span class="empty">还没有消息</span></div>
+        <div class="composer">
+          <textarea class="box" id="ta" spellcheck="false"></textarea>
+          <button class="send" id="send-ta">发送</button>
+        </div>
+      </section>
+    </main>
+
+    <div class="hint">
+      <a href="./index.html">← 代码编辑器演示</a>
+      <a href="./rich.html">富文本夹具 →</a>
+    </div>
+
+    <script>
+      (() => {
+        const sent = { pm: 0, textarea: 0 };
+
+        const badge = document.getElementById('sentBadge');
+        function paint() {
+          const total = sent.pm + sent.textarea;
+          badge.textContent = '已发送 ' + total + ' 条';
+          badge.className = total > 0 ? 'badge bad' : 'badge';
+        }
+
+        function append(kind, text) {
+          const list = document.getElementById('msgs-' + kind);
+          const empty = list.querySelector('.empty');
+          if (empty) empty.remove();
+          const div = document.createElement('div');
+          div.className = 'msg';
+          div.textContent = text;
+          list.appendChild(div);
+          list.scrollTop = list.scrollHeight;
+        }
+
+        function send(kind) {
+          const box = document.getElementById(kind);
+          const text = kind === 'textarea' ? box.value : box.innerText;
+          if (!text.trim()) return;
+          sent[kind]++;
+          append(kind, text);
+          if (kind === 'textarea') box.value = '';
+          else box.textContent = '';
+          paint();
+        }
+
+        function wireKey(kind) {
+          const box = document.getElementById(kind);
+          box.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+            e.preventDefault();
+            send(kind);
+          });
+        }
+
+        wireKey('pm');
+        wireKey('ta');
+        document.getElementById('send-pm').addEventListener('click', () => send('pm'));
+        document.getElementById('send-ta').addEventListener('click', () => send('ta'));
+
+        window.__chat = {
+          ready: true,
+          sent,
+          send,
+          getValue: (kind) => {
+            const box = document.getElementById(kind === 'textarea' ? 'ta' : 'pm');
+            return kind === 'textarea' ? box.value : box.innerText;
+          },
+          setValue: (kind, v) => {
+            const box = document.getElementById(kind === 'textarea' ? 'ta' : 'pm');
+            if (kind === 'textarea') box.value = v;
+            else box.textContent = v;
+          },
+          messageCount: (kind) => document.querySelectorAll('#msgs-' + kind + ' .msg').length
+        };
+      })();
+    </script>
+  </body>
+</html>

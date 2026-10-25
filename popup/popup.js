@@ -2,11 +2,10 @@
 
 /* 贴进去 · PasteBridge — 弹窗逻辑
  *
- * 弹窗只做三件事：预检（顺带快照焦点）、把代码交给页面世界、记录草稿与历史。
- * 插入的真正执行发生在页面里，所以弹窗中途关闭不会中断插入。
+ * 弹窗只负责界面：预检、草稿、历史、状态呈现。
+ * 注入与执行全部交给 background/sw.js —— 插入时页面会抢焦点、弹窗随之关闭，
+ * 留在弹窗里的那条 promise 只会以 "message port closed" 收场，结果拿不回来。
  */
-
-const PAGE_FILES = ['page/core.js', 'page/detect.js', 'page/insert.js', 'page/picker.js', 'page/main.js'];
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,11 +15,20 @@ const ui = {
   saved: $('saved'),
   chip: $('chip'),
   insert: $('insert'),
+  typeIt: $('typeIt'),
   history: $('history'),
+  snippets: $('snippets'),
+  workbench: $('workbench'),
+  readClip: $('readClip'),
   clear: $('clear'),
+  md: $('md'),
   panel: $('panel'),
+  panelTitle: $('panelTitle'),
   list: $('list'),
   closePanel: $('closePanel'),
+  framePanel: $('framePanel'),
+  frameList: $('frameList'),
+  closeFramePanel: $('closeFramePanel'),
   hint: $('hint')
 };
 
@@ -31,10 +39,18 @@ const S = {
   world: 'MAIN',
   pre: null,
   lastChoice: null,
-  history: [],
   busy: false,
   saveTimer: 0,
-  fileBlocked: false
+  fileBlocked: false,
+  panelMode: 'history',
+  md: { on: false, lang: '' },
+  typing: {},
+  lastFail: null,
+  pendingType: false,
+  /* 跨 frame：frames 是各帧概况，targets 是合并后的候选（带 frameId） */
+  frames: [],
+  targets: [],
+  frameId: null
 };
 
 /* ---------------- 初始化 ---------------- */
@@ -45,6 +61,7 @@ async function init() {
   bind();
   await restoreDraft();
   updateCount();
+  await loadSettings();
 
   let tab = null;
   try {
@@ -59,6 +76,11 @@ async function init() {
   S.tabId = tab.id;
   S.url = tab.url || '';
   S.origin = originOf(S.url);
+
+  // 记下目标页：工作台里的「插入页面」要靠它
+  try {
+    await chrome.storage.session.set({ lastTabId: S.tabId, lastUrl: S.url });
+  } catch (_) {}
 
   if (S.url && !/^(https?|file):/i.test(S.url)) {
     setChip('err', '此页面不支持扩展运行');
@@ -83,9 +105,13 @@ function bind() {
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      // 历史面板开着时先收面板，再按一次才关窗口
+      // 浮层开着时先收浮层，再按一次才关窗口
       if (!ui.panel.classList.contains('hidden')) {
         ui.panel.classList.add('hidden');
+        return;
+      }
+      if (!ui.framePanel.classList.contains('hidden')) {
+        ui.framePanel.classList.add('hidden');
         return;
       }
       window.close();
@@ -100,17 +126,20 @@ function bind() {
     ui.code.focus();
   });
 
-  ui.history.addEventListener('click', () => {
-    renderHistory();
-    ui.panel.classList.remove('hidden');
-  });
+  ui.history.addEventListener('click', () => openPanel('history'));
+  ui.snippets.addEventListener('click', () => openPanel('snippets'));
+  ui.workbench.addEventListener('click', openWorkbench);
+  ui.readClip.addEventListener('click', readClipboardIntoEditor);
+  ui.md.addEventListener('click', toggleMd);
+  ui.typeIt.addEventListener('click', doType);
 
   ui.closePanel.addEventListener('click', () => ui.panel.classList.add('hidden'));
+  ui.closeFramePanel.addEventListener('click', () => ui.framePanel.classList.add('hidden'));
 
-  // 点状态胶囊 = 重新检测（比如刚在页面里点了编辑器）
+  // 点状态胶囊 = 重新检测；强制扫描内嵌框架（顶层有编辑器时也能扫）
   ui.chip.addEventListener('click', () => {
     if (S.busy) return;
-    precheck();
+    precheck(true);
   });
 }
 
@@ -122,46 +151,59 @@ function originOf(url) {
   }
 }
 
-/* ---------------- 与页面世界通信 ---------------- */
+/* ---------------- 与背景层通信 ---------------- */
 
-async function ensureInjected() {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: S.tabId },
-      files: PAGE_FILES,
-      world: 'MAIN'
-    });
-    S.world = 'MAIN';
-    return;
-  } catch (_) {
-    // 少数站点会拒绝主世界注入，降级到隔离世界（失去原生实例 API，但 execCommand 仍可用）
-  }
-  await chrome.scripting.executeScript({ target: { tabId: S.tabId }, files: PAGE_FILES });
-  S.world = 'ISOLATED';
-}
-
-async function run(payload) {
-  const [res] = await chrome.scripting.executeScript({
-    target: { tabId: S.tabId },
-    world: S.world,
-    func: (p) => (window.__WB__ ? window.__WB__.run(p) : { ok: false, reason: 'inject-failed' }),
-    args: [payload]
-  });
-  return res && res.result;
+/** 所有页面操作都经由 SW，弹窗中途关闭也不会中断执行 */
+async function run(payload, frameIds) {
+  const msg = { type: 'pb:run', tabId: S.tabId, payload };
+  if (frameIds && frameIds.length) msg.frameIds = frameIds;
+  const r = await chrome.runtime.sendMessage(msg);
+  if (!r) return { ok: false, reason: 'no-response' };
+  if (r.world) S.world = r.world;
+  return r;
 }
 
 /* ---------------- 预检 ---------------- */
 
-async function precheck() {
+async function precheck(forceScan) {
   setChip('idle', '检测中…');
   try {
-    await ensureInjected();
-    const r = await run({ op: 'precheck' });
+    let r = await run({ op: 'precheck' });
 
     if (!r || !r.ok) {
-      setChip('err', r && r.reason === 'inject-failed' ? '注入失败，请刷新页面' : '无法访问此页面');
+      const failed = r && r.reason === 'inject-failed';
+      setChip('err', failed ? '注入失败，请刷新页面' : '无法访问此页面');
       ui.insert.disabled = true;
       return;
+    }
+
+    S.frames = [];
+    S.targets = [];
+    S.frameId = null;
+
+    /* 顶层找不到编辑器、而页面里有 iframe —— 编辑器很可能藏在子帧里。
+     * 点状态胶囊可以强制扫描一次（顶层也有编辑器时用得上）。 */
+    const wantScan = !!(r.iframes && (forceScan || !r.count));
+    if (wantScan) {
+      setChip('idle', '扫描内嵌框架…');
+      let s = null;
+      try {
+        s = await run({ op: 'scan' });
+      } catch (_) {}
+      if (s && s.ok && s.count) {
+        S.frames = s.frames || [];
+        S.targets = s.choices || [];
+        r = {
+          ok: true,
+          count: s.count,
+          choices: s.choices,
+          primary: null,
+          focused: s.choices.some((c) => c.focused),
+          iframes: r.iframes,
+          scanned: true
+        };
+        if (s.world) S.world = s.world;
+      }
     }
 
     S.pre = r;
@@ -175,15 +217,25 @@ async function precheck() {
 
     if (!r.count) {
       ui.insert.disabled = true;
-      setChip('warn', r.iframes ? '未找到编辑器（可能在 iframe 中）' : '未找到编辑器');
+      const why = r.iframes ? '未找到编辑器（' + r.iframes + ' 个 iframe 也扫过了）' : '未找到编辑器';
+      setChip('warn', why);
     } else {
       ui.insert.disabled = false;
       const primary = r.primary != null ? r.choices[r.primary] : r.choices[0];
-      const name = primary.name ? ' · ' + primary.name : '';
+      const name = primary && primary.name ? ' · ' + primary.name : '';
       let text;
-      if (r.count === 1) text = primary.label + name + ' · 就绪';
-      else if (r.focused) text = '已聚焦 ' + primary.label + name;
-      else text = r.count + ' 个编辑器 · 插入时选择';
+      if (r.scanned) {
+        text =
+          S.frames.length > 1
+            ? '内嵌 ' + S.frames.length + ' 个框架 · ' + r.count + ' 个编辑器'
+            : '内嵌框架 · ' + (primary ? primary.label + name : r.count + ' 个编辑器');
+      } else if (r.count === 1) {
+        text = primary.label + name + ' · 就绪';
+      } else if (r.focused) {
+        text = '已聚焦 ' + primary.label + name;
+      } else {
+        text = r.count + ' 个编辑器 · 插入时选择';
+      }
       setChip(r.count === 1 || r.focused ? 'ok' : 'warn', text);
       if (S.world === 'ISOLATED') setChip('warn', text + ' · 降级');
     }
@@ -209,6 +261,64 @@ function showLast(st) {
 
 /* ---------------- 插入 ---------------- */
 
+const NEED_PICK = Symbol('need-pick');
+
+/* 目标帧怎么定：聚焦的那一帧 > 只有一帧有候选 > 让用户选 */
+function resolveFrame() {
+  const targets = S.targets;
+  if (!targets.length) return S.frameId;
+
+  const focused = targets.filter((t) => t.focused && !t.readonly);
+  if (focused.length) return focused[0].frameId;
+
+  const ids = [...new Set(targets.map((t) => t.frameId))];
+  if (ids.length === 1) return ids[0];
+  return NEED_PICK;
+}
+
+function renderFrameChooser() {
+  ui.frameList.textContent = '';
+
+  const byFrame = new Map();
+  for (const t of S.targets) {
+    if (!byFrame.has(t.frameId)) byFrame.set(t.frameId, []);
+    byFrame.get(t.frameId).push(t);
+  }
+
+  let i = 0;
+  for (const [frameId, list] of byFrame) {
+    i++;
+    const li = document.createElement('li');
+    li.className = 'item';
+
+    const main = document.createElement('div');
+    main.className = 'item-main';
+
+    const title = document.createElement('div');
+    title.className = 'item-preview';
+    const where = list[0].isTop ? '主页面' : '内嵌框架 ' + i;
+    title.textContent =
+      where + ' · ' + list.map((c) => c.label + (c.name ? '（' + c.name + '）' : '')).join(' / ');
+
+    const sub = document.createElement('div');
+    sub.className = 'item-sub';
+    sub.textContent = list.length + ' 个可插入位置' + (list.every((c) => c.readonly) ? ' · 只读' : '');
+
+    main.appendChild(title);
+    main.appendChild(sub);
+    li.appendChild(main);
+
+    li.addEventListener('click', () => {
+      S.frameId = frameId;
+      insertNow(ui.code.value, frameId);
+    });
+
+    ui.frameList.appendChild(li);
+  }
+
+  ui.framePanel.classList.remove('hidden');
+}
+
 async function doInsert() {
   const code = ui.code.value;
   if (!code) {
@@ -222,12 +332,27 @@ async function doInsert() {
     return;
   }
 
+  const frame = resolveFrame();
+  if (frame === NEED_PICK) {
+    setChip('warn', '请选择要插入的位置');
+    renderFrameChooser();
+    return;
+  }
+
+  await insertNow(code, frame);
+}
+
+async function insertNow(code, frameId) {
   S.busy = true;
   ui.insert.disabled = true;
+  ui.framePanel.classList.add('hidden');
   setChip('idle', '正在插入…');
 
   try {
-    const r = await run({ op: 'insert', code, lastChoice: S.lastChoice });
+    const r = await run(
+      { op: 'insert', code, lastChoice: S.lastChoice, md: S.md },
+      frameId == null ? null : [frameId]
+    );
 
     if (!r) {
       setChip('err', '页面无响应，请刷新后重试');
@@ -240,11 +365,22 @@ async function doInsert() {
     }
 
     if (r.ok) {
+      if (r.partial) {
+        // 方法中途抛异常但内容变了：不敢说成功，也不敢再打一遍
+        setChip('warn', '可能只插入了一部分，请检查');
+        hideTypeButton();
+        return;
+      }
       const tag = r.verified === 'strict' ? '' : r.verified === 'weak' ? ' · 弱校验' : ' · 未校验';
-      setChip('ok', '✓ 已插入 ' + r.chars + ' 字符' + tag);
-      await pushHistory(code);
+      const flat = r.flat ? ' · 换行已转空格' : '';
+      setChip('ok', '✓ 已插入 ' + r.chars + ' 字符' + tag + flat);
+      hideTypeButton();
+      // 插入记录由 SW 就地写入（弹窗随时可能被关掉），这里不用再写一遍
     } else {
+      S.lastFail = r;
       setChip('err', mapReason(r.reason));
+      showTypeButton();
+      if (S.typing && S.typing.autoFallback) S.pendingType = true;
     }
   } catch (e) {
     // 插入时页面会抢走焦点，弹窗随之关闭，promise 以 "message port closed" 结束。
@@ -259,12 +395,26 @@ async function doInsert() {
     S.busy = false;
     ui.insert.disabled = !(S.pre && S.pre.count);
   }
+
+  // 自动兜底要等 busy 复位之后再跑，否则 doType 会直接 return
+  if (S.pendingType) {
+    S.pendingType = false;
+    doType();
+  }
 }
 
 function mapReason(reason) {
   if (!reason) return '插入失败';
   if (reason === 'no-editor') return '没有找到可插入的编辑器';
   if (reason === 'empty') return '没有内容可插入';
+  if (reason === 'debugger-denied') return '未授权键盘模拟（工作台 → 设置）';
+  if (reason === 'debugger-busy') return '调试器被占用，请关闭开发者工具';
+  if (reason === 'debugger-detached') return '调试会话被中断';
+  if (reason === 'timeout') return '键入超时，可能只打了一部分';
+  if (reason === 'cdp-failed') return '键盘模拟失败';
+  if (reason === 'too-long') return '内容太长，无法逐字键入';
+  if (reason === 'no-focus') return '页面上没有可键入的焦点';
+  if (reason === 'blind-no-change') return '盲插没有产生变化';
   return String(reason).slice(0, 80);
 }
 
@@ -318,38 +468,64 @@ async function restoreDraft() {
   } catch (_) {}
 }
 
-/* ---------------- 历史 ---------------- */
+/* ---------------- 剪贴板面板 ---------------- */
 
-async function pushHistory(code) {
+function openPanel(mode) {
+  S.panelMode = mode;
+  ui.panelTitle.textContent = mode === 'snippets' ? '片段库' : '剪贴板历史';
+  ui.panel.classList.remove('hidden');
+  if (mode === 'snippets') renderSnippets();
+  else renderHistory();
+}
+
+function emptyLi(text) {
+  const li = document.createElement('li');
+  li.className = 'empty';
+  li.textContent = text;
+  return li;
+}
+
+function loadIntoEditor(text) {
+  ui.code.value = text;
+  updateCount();
+  scheduleDraftSave();
+  ui.panel.classList.add('hidden');
+  ui.code.focus();
+}
+
+async function copyText(text) {
   try {
-    const { history = [] } = await chrome.storage.local.get('history');
-    const next = [{ id: Date.now().toString(36), code, ts: Date.now() }]
-      .concat(history.filter((h) => h.code !== code))
-      .slice(0, 10);
-    await chrome.storage.local.set({ history: next });
-    S.history = next;
-  } catch (_) {}
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    // 扩展页里 execCommand 通常不需要额外权限，作为兜底
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (_) {}
+    ta.remove();
+    return ok;
+  }
 }
 
 async function renderHistory() {
-  let history = [];
-  try {
-    const r = await chrome.storage.local.get('history');
-    history = Array.isArray(r.history) ? r.history : [];
-  } catch (_) {}
-  S.history = history;
-
+  const idx = await PBStore.getClipIndex();
   ui.list.textContent = '';
 
-  if (!history.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = '还没有插入记录。成功插入一次后，这里会保存最近 10 段代码。';
-    ui.list.appendChild(li);
+  if (!idx.length) {
+    ui.list.appendChild(
+      emptyLi('还没有记录。\n复制内容后点「读剪贴板」，或用工作台抓取页面选区。')
+    );
     return;
   }
 
-  history.forEach((h) => {
+  for (const c of idx.slice(0, 30)) {
     const li = document.createElement('li');
     li.className = 'item';
 
@@ -358,15 +534,26 @@ async function renderHistory() {
 
     const prev = document.createElement('div');
     prev.className = 'item-preview';
-    prev.textContent = firstLine(h.code);
+    prev.textContent = (c.pin ? '★ ' : '') + c.preview;
 
     const sub = document.createElement('div');
     sub.className = 'item-sub';
-    const lines = h.code.split('\n').length;
-    sub.textContent = h.code.length + ' 字符 · ' + lines + ' 行 · ' + fmtTime(h.ts);
+    sub.textContent =
+      c.len + ' 字符 · ' + (c.src && c.src.host ? c.src.host + ' · ' : '') + fmtTime(c.ts);
 
     main.appendChild(prev);
     main.appendChild(sub);
+
+    const copy = document.createElement('button');
+    copy.className = 'item-del';
+    copy.textContent = '⧉';
+    copy.title = '复制到系统剪贴板';
+    copy.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const text = await PBStore.getClipText(c.id);
+      const ok = await copyText(text);
+      setChip(ok ? 'ok' : 'err', ok ? '已复制到剪贴板' : '复制失败');
+    });
 
     const del = document.createElement('button');
     del.className = 'item-del';
@@ -374,31 +561,78 @@ async function renderHistory() {
     del.title = '删除这条记录';
     del.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const next = S.history.filter((x) => x.id !== h.id);
-      S.history = next;
-      try {
-        await chrome.storage.local.set({ history: next });
-      } catch (_) {}
+      await PBStore.removeClip(c.id);
       renderHistory();
     });
 
     li.appendChild(main);
+    li.appendChild(copy);
     li.appendChild(del);
-    li.addEventListener('click', () => {
-      ui.code.value = h.code;
-      updateCount();
-      scheduleDraftSave();
-      ui.panel.classList.add('hidden');
-      ui.code.focus();
+    li.addEventListener('click', async () => {
+      const text = await PBStore.getClipText(c.id);
+      loadIntoEditor(text);
     });
 
     ui.list.appendChild(li);
-  });
+  }
 }
 
-function firstLine(code) {
-  const line = String(code).split('\n')[0].trim();
-  return line.length > 46 ? line.slice(0, 46) + '…' : line || '（空行开头）';
+async function renderSnippets() {
+  const idx = await PBStore.getSnipIndex();
+  ui.list.textContent = '';
+
+  if (!idx.length) {
+    ui.list.appendChild(emptyLi('还没有片段。\n到工作台里把常用代码块存成片段，之后一键取用。'));
+    return;
+  }
+
+  for (const s of idx) {
+    const li = document.createElement('li');
+    li.className = 'item';
+
+    const main = document.createElement('div');
+    main.className = 'item-main';
+
+    const prev = document.createElement('div');
+    prev.className = 'item-preview';
+    prev.textContent = s.name + (s.lang ? ' · ' + s.lang : '');
+
+    const sub = document.createElement('div');
+    sub.className = 'item-sub';
+    sub.textContent = s.len + ' 字符 · 用过 ' + (s.used || 0) + ' 次';
+
+    main.appendChild(prev);
+    main.appendChild(sub);
+    li.appendChild(main);
+
+    li.addEventListener('click', async () => {
+      const text = await PBStore.getSnippetText(s.id);
+      await PBStore.useSnippet(s.id);
+      loadIntoEditor(text);
+    });
+
+    ui.list.appendChild(li);
+  }
+}
+
+/* 读系统剪贴板进输入框：最直接的「当剪贴板用」 */
+async function readClipboardIntoEditor() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text) {
+      setChip('warn', '剪贴板是空的');
+      return;
+    }
+    loadIntoEditor(text);
+    await PBStore.putClip({ text, src: { host: 'clipboard' } });
+    setChip('ok', '已读入 ' + text.length + ' 字符');
+  } catch (_) {
+    setChip('err', '需要剪贴板权限（工作台 → 设置 里申请）');
+  }
+}
+
+function openWorkbench(hash) {
+  chrome.tabs.create({ url: chrome.runtime.getURL('workbench/index.html' + (hash || '')) });
 }
 
 function fmtTime(ts) {
@@ -411,13 +645,133 @@ function fmtTime(ts) {
   return d.getMonth() + 1 + '月' + d.getDate() + '日';
 }
 
+/* ---------------- 设置与 Markdown 开关 ---------------- */
+
+async function loadSettings() {
+  try {
+    const st = await PBStore.getSettings();
+    S.md = st.md || { on: false, lang: '' };
+    S.typing = st.typing || {};
+  } catch (_) {}
+  paintMd();
+}
+
+function paintMd() {
+  ui.md.className = 'linkbtn' + (S.md.on ? ' on' : '');
+  ui.md.title = S.md.on
+    ? '已开启：插到聊天框时会包成 ``` 代码块（点击关闭）'
+    : '插到聊天框 / 富文本框时包成 ``` 代码块';
+}
+
+async function toggleMd() {
+  S.md = { on: !S.md.on, lang: S.md.lang || '' };
+  paintMd();
+  try {
+    await PBStore.saveSettings({ md: { on: S.md.on } });
+  } catch (_) {}
+}
+
+/* ---------------- 键入：盲插 → 键盘模拟 ---------------- */
+
+async function hasDebuggerPerm() {
+  try {
+    return await chrome.permissions.contains({ permissions: ['debugger'] });
+  } catch (_) {
+    return false;
+  }
+}
+
+function showTypeButton() {
+  ui.typeIt.classList.remove('hidden');
+}
+
+function hideTypeButton() {
+  ui.typeIt.classList.add('hidden');
+  S.lastFail = null;
+}
+
+/**
+ * 失败后的兜底路由：
+ *   no-editor（连候选都没有）→ 先盲插，盲插无效再键盘模拟
+ *   有目标但所有方法都失败 → 跳过盲插（execCommand 已经试过），直接键盘模拟
+ */
+async function doType() {
+  const code = ui.code.value;
+  if (!code) {
+    setChip('warn', '先粘贴点内容');
+    return;
+  }
+  if (S.busy) return;
+
+  const reason = S.lastFail && S.lastFail.reason;
+
+  if (reason === 'no-editor') {
+    S.busy = true;
+    setChip('idle', '正在盲插…');
+    let b = null;
+    try {
+      b = await run({ op: 'blind', code });
+    } catch (_) {}
+    S.busy = false;
+
+    if (b && b.ok && b.verified === 'strict') {
+      setChip('ok', '✓ 已盲插 ' + b.chars + ' 字符');
+      hideTypeButton();
+      return;
+    }
+    if (b && b.ok && b.verified === 'uncertain') {
+      setChip('warn', '已尝试盲插（未校验），请检查；没效果再点一次');
+      return;
+    }
+  }
+
+  if (!(await hasDebuggerPerm())) {
+    setChip('warn', '需先在工作台授权键盘模拟');
+    openWorkbench('#settings');
+    return;
+  }
+
+  await typeNow(code);
+}
+
+async function typeNow(code) {
+  S.busy = true;
+  ui.insert.disabled = true;
+  setChip('idle', '正在键入…');
+
+  try {
+    const r = await run({ op: 'type', code, choice: S.lastChoice || null });
+
+    if (!r) {
+      setChip('err', '页面无响应，请刷新后重试');
+      return;
+    }
+    if (r.ok) {
+      const cut = r.truncated ? '（超出上限，已截断）' : '';
+      setChip('ok', '✓ 已键入 ' + r.chars + ' 字符' + cut);
+      hideTypeButton();
+    } else {
+      setChip('err', mapReason(r.reason));
+    }
+  } catch (e) {
+    const msg = String((e && e.message) || e || '');
+    if (/port closed|message port|窗口|closed/i.test(msg)) {
+      setChip('idle', '已发送，结果见页面提示');
+    } else {
+      setChip('err', mapError(e));
+    }
+  } finally {
+    S.busy = false;
+    ui.insert.disabled = !(S.pre && S.pre.count);
+  }
+}
+
 /* ---------------- 站点记忆 ---------------- */
 
 async function loadChoice() {
   try {
-    const key = 'choice:' + S.origin;
-    const o = await chrome.storage.local.get(key);
-    return o[key] || null;
+    const s = await PBStore.getSite(S.origin);
+    return s ? { kind: s.kind, nth: s.nth } : null;
   } catch (_) {
     return null;
   }
@@ -425,7 +779,6 @@ async function loadChoice() {
 
 async function saveChoice(choice) {
   try {
-    const key = 'choice:' + S.origin;
-    await chrome.storage.local.set({ [key]: choice });
+    await PBStore.setSite(S.origin, { kind: choice.kind, nth: choice.nth, frameId: S.frameId });
   } catch (_) {}
 }

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>贴进去 · closed shadow DOM 演示</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f6f7f9;
+        color: #111827;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+      }
+
+      .top {
+        padding: 16px 22px;
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 16px;
+      }
+
+      .top p {
+        margin: 0;
+        max-width: 840px;
+        font-size: 12.5px;
+        color: #6b7280;
+      }
+
+      .wrap {
+        padding: 16px 22px 28px;
+        max-width: 980px;
+      }
+
+      .panel {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 14px;
+      }
+
+      .head {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border-bottom: 1px solid #eef0f3;
+        font-size: 12px;
+      }
+
+      .head code {
+        color: #9ca3af;
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .slot {
+        padding: 12px;
+      }
+
+      .foot {
+        font-size: 12px;
+        color: #6b7280;
+      }
+
+      .foot a {
+        color: #2563eb;
+        text-decoration: none;
+        margin-right: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>closed shadow DOM：扩展「看不见」的编辑器</h1>
+        <p>
+          下面两个输入框都在 <code>attachShadow({ mode: 'closed' })</code> 里。
+          扩展的 <code>collectRoots()</code> 只能穿透 open shadow root，所以 <code>detect()</code> 完全找不到它们。
+          但只要你先把光标点进去，盲插（<code>execCommand('insertText')</code>）仍然可能打得进去——
+          因为编辑命令作用于「文档当前焦点」，不受 shadow 边界限制。
+        </p>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="panel">
+        <div class="head"><b>closed shadow 里的 contenteditable</b><code>#closed-ce</code></div>
+        <div class="slot" id="host-ce"></div>
+      </section>
+
+      <section class="panel">
+        <div class="head"><b>closed shadow 里的 textarea</b><code>#closed-ta</code></div>
+        <div class="slot" id="host-ta"></div>
+      </section>
+
+      <div class="foot">
+        <a href="./index.html">← 代码编辑器演示</a>
+        <a href="./rich.html">富文本夹具 →</a>
+      </div>
+    </main>
+
+    <script>
+      (() => {
+        const CSS = [
+          'textarea{display:block;width:100%;height:110px;padding:9px 11px;border:1px solid #d1d5db;',
+          'border-radius:8px;outline:none;resize:none;font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace}',
+          'textarea:focus{border-color:#2563eb}',
+          '.ce{min-height:80px;padding:9px 11px;border:1px solid #d1d5db;border-radius:8px;',
+          'font:12.5px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}',
+          '.ce:focus{border-color:#2563eb}',
+          '.tip{margin-top:6px;font-size:11px;color:#9ca3af}'
+        ].join('');
+
+        function build(host, kind) {
+          // 关键：mode 必须是 'closed'，扩展拿不到 shadowRoot
+          const root = host.attachShadow({ mode: 'closed' });
+
+          const style = document.createElement('style');
+          style.textContent = CSS;
+          root.appendChild(style);
+
+          const el = document.createElement(kind === 'ta' ? 'textarea' : 'div');
+          el.className = kind === 'ta' ? '' : 'ce';
+          if (kind !== 'ta') el.contentEditable = 'true';
+          el.setAttribute('spellcheck', 'false');
+          root.appendChild(el);
+
+          const tip = document.createElement('div');
+          tip.className = 'tip';
+          tip.textContent = 'shadowRoot = ' + (host.shadowRoot === null ? 'null（closed）' : 'open');
+          root.appendChild(tip);
+
+          return el;
+        }
+
+        const hostCe = document.getElementById('host-ce');
+        const hostTa = document.getElementById('host-ta');
+        const ce = build(hostCe, 'ce');
+        const ta = build(hostTa, 'ta');
+
+        ce.textContent = '点我，然后把光标停在这里';
+        ta.value = '点我，然后把光标停在这里';
+
+        /* 页面自己在闭包里持有元素引用，所以即使 shadowRoot 是 closed 也能读写——
+         * 这正是测试用来断言「盲插到底有没有打进去」的通道。 */
+        window.__closed = {
+          ready: true,
+          getCe: () => ce.innerText,
+          getTa: () => ta.value,
+          setCe: (v) => {
+            ce.textContent = v;
+          },
+          setTa: (v) => {
+            ta.value = v;
+          },
+          focusCe: () => ce.focus(),
+          focusTa: () => ta.focus(),
+          shadowIsClosed: () => hostCe.shadowRoot === null && hostTa.shadowRoot === null
+        };
+      })();
+    </script>
+  </body>
+</html>
