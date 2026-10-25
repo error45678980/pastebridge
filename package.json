@@ -1,0 +1,15 @@
+{
+  "name": "pastebridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "绕过禁用粘贴的代码编辑器，把代码直接送进去",
+  "scripts": {
+    "icons": "python tools/make-icons.py",
+    "demo": "python -m http.server 8080 --directory demo",
+    "test": "node tests/e2e.mjs",
+    "test:ext": "node tests/extension.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}

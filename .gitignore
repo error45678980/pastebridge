@@ -1,0 +1,7 @@
+node_modules/
+tests/popup.png
+.workbuddy-ai/
+.gh-tmp/
+*.log
+.DS_Store
+Thumbs.db

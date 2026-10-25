@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>贴进去</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="hd">
+      <div class="brand"><span class="dot" aria-hidden="true"></span><span>贴进去</span></div>
+      <button id="chip" class="chip" title="点击重新检测当前页面">检测中…</button>
+    </header>
+
+    <main class="main">
+      <textarea
+        id="code"
+        class="editor"
+        spellcheck="false"
+        autocomplete="off"
+        autocapitalize="off"
+        placeholder="在这里粘贴要插入的代码…&#10;&#10;Ctrl + Enter 立即插入"
+      ></textarea>
+      <div class="meta">
+        <span id="count">0 字符 · 0 行</span>
+        <span id="saved" class="saved"></span>
+      </div>
+    </main>
+
+    <footer class="ft">
+      <div class="row">
+        <button id="insert" class="btn primary" disabled>插入</button>
+        <button id="history" class="btn ghost">历史</button>
+        <button id="clear" class="btn ghost">清空</button>
+      </div>
+      <p id="hint" class="hint">插入时页面会抢走焦点，本窗口可能自动关闭；结果看页面右下角</p>
+    </footer>
+
+    <section id="panel" class="panel hidden" aria-label="最近插入">
+      <div class="panel-hd">
+        <span>最近插入</span>
+        <button id="closePanel" class="x" aria-label="关闭">×</button>
+      </div>
+      <ul id="list" class="list"></ul>
+    </section>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
