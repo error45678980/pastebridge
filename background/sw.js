@@ -16,7 +16,7 @@
 importScripts('/lib/files.js', '/lib/store.js', '/lib/typing.js', '/lib/cdp.js');
 
 const PAGE_FILES = (self.PB_FILES && self.PB_FILES.page) || [];
-const V = '2.1.2';
+const V = '2.1.3';
 
 /* 注意：PBCdp.init() 不在这里调用。
  * 它是可选子系统（标准版没有 debugger 权限），必须在所有
