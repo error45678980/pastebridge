@@ -18,7 +18,11 @@ importScripts('/lib/files.js', '/lib/store.js', '/lib/typing.js', '/lib/cdp.js')
 const PAGE_FILES = (self.PB_FILES && self.PB_FILES.page) || [];
 const V = '2.1.2';
 
-if (self.PBCdp) self.PBCdp.init();
+/* 注意：PBCdp.init() 不在这里调用。
+ * 它是可选子系统（标准版没有 debugger 权限），必须在所有
+ * chrome.*.onXxx.addListener 注册**之后**再初始化，并单独 try/catch。
+ * 曾经它写在文件顶部且没有守卫，一旦抛异常，下面所有监听器都注册不上，
+ * 弹窗发出的每个 pb:run 都石沉大海——这就是「装上以后不能插入」。 */
 
 /* tabId -> 'MAIN' | 'ISOLATED'，仅用于给弹窗显示「降级」状态 */
 const worlds = new Map();
@@ -124,7 +128,12 @@ async function runOp(msg) {
 
 async function typeText(msg) {
   const tabId = msg.tabId;
-  if (!self.PBCdp || !self.PBType) return { ok: false, reason: 'cdp-unavailable' };
+  /* 标准版安装包没有 debugger 权限，键入这条路根本不存在。
+   * 提前给出可读的原因，而不是让 CDP 层去碰一个 undefined 的 API。 */
+  if (!self.PBCdp || !self.PBCdp.available || !self.PBCdp.available()) {
+    return { ok: false, reason: 'debugger-unavailable' };
+  }
+  if (!self.PBType) return { ok: false, reason: 'cdp-unavailable' };
 
   const payload = msg.payload || {};
   const raw = String(payload.code == null ? '' : payload.code);
@@ -331,6 +340,9 @@ const MENUS = [
 ];
 
 function buildMenus() {
+  /* 同一原则：菜单是可选能力，缺权限时安静跳过，不要连累 onInstalled 里
+   * 排在它后面的存储迁移。 */
+  if (!chrome.contextMenus) return;
   chrome.contextMenus.removeAll(() => {
     for (const m of MENUS) {
       try {
@@ -394,7 +406,12 @@ async function insertLatest(tabId) {
   return runOp({ tabId, payload: { op: 'insert', code: text } });
 }
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+/* 顶层 addListener 一律先做存在性检查。
+ * 这类调用写在文件顶层，任何一次抛异常都会静默吃掉它之后的全部注册，
+ * 而症状只是「某个功能点了没反应」——排查成本极高（这个项目已经栽过三次）。
+ * 今天 manifest 还留着 contextMenus 权限，但权限最小化一旦精简掉它，
+ * 这里必须先活下来。回调抽成具名函数，既好测也不改变原有行为。 */
+async function onMenuClick(info, tab) {
   const tabId = tab && tab.id != null ? tab.id : null;
   try {
     if (info.menuItemId === 'pb-save-selection') {
@@ -413,11 +430,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       if (tabId != null) await insertLatest(tabId);
     }
   } catch (_) {}
-});
+}
+
+if (chrome.contextMenus && chrome.contextMenus.onClicked) {
+  chrome.contextMenus.onClicked.addListener(onMenuClick);
+}
 
 /* ---------------- 快捷键 ---------------- */
 
-chrome.commands.onCommand.addListener(async (cmd) => {
+async function onCommand(cmd) {
   try {
     if (cmd === 'capture-selection') {
       const t = await activeTab();
@@ -433,4 +454,20 @@ chrome.commands.onCommand.addListener(async (cmd) => {
       if (t && t.id != null) await insertLatest(t.id);
     }
   } catch (_) {}
-});
+}
+
+if (chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener(onCommand);
+}
+
+/* ---------------- 可选子系统初始化（必须放在最后） ----------------
+ *
+ * 顺序原则：消息路由 > 任何可选能力。
+ * 这里放在文件末尾，就是为了让上面所有 addListener 先跑完；
+ * 万一 init() 抛异常，也只丢掉「CDP 键入」这一层，插入主链路照常可用。
+ */
+try {
+  if (self.PBCdp && self.PBCdp.init) self.PBCdp.init();
+} catch (e) {
+  console.warn('[贴进去] CDP 初始化失败，键盘模拟不可用：' + ((e && e.message) || e));
+}
