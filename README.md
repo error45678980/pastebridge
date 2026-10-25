@@ -110,3 +110,7 @@ tools/make-icons.py    程序化生成图标
 页面世界的 UI 全部用 CSSOM 属性赋值（`el.style.xxx = ...`），不用 `innerHTML`、不写 `style` 属性字符串。
 因为 GitHub 这类站点开着 Trusted Types 和严格 CSP，用字符串写 HTML 会直接抛异常。
 `requestAnimationFrame` 也带了定时兜底——后台标签页里它会被节流，不兜底会把插入流程卡死。
+
+## License
+
+[MIT](LICENSE) © error45678980
