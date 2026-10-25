@@ -128,7 +128,7 @@ function bind() {
 
   ui.history.addEventListener('click', () => openPanel('history'));
   ui.snippets.addEventListener('click', () => openPanel('snippets'));
-  ui.workbench.addEventListener('click', openWorkbench);
+  ui.workbench.addEventListener('click', () => openWorkbench());
   ui.readClip.addEventListener('click', readClipboardIntoEditor);
   ui.md.addEventListener('click', toggleMd);
   ui.typeIt.addEventListener('click', doType);
@@ -631,8 +631,17 @@ async function readClipboardIntoEditor() {
   }
 }
 
+/* 只接受字符串形式的 hash。
+ * 这个函数既被 click 直接绑定（此时第一个参数是 MouseEvent），
+ * 也被显式传 '#settings' 调用——不挡一道就会拼出
+ * "workbench/index.html[object MouseEvent]" 这种不存在的路径。 */
+function workbenchUrl(hash) {
+  const suffix = typeof hash === 'string' && hash.charAt(0) === '#' ? hash : '';
+  return chrome.runtime.getURL('workbench/index.html' + suffix);
+}
+
 function openWorkbench(hash) {
-  chrome.tabs.create({ url: chrome.runtime.getURL('workbench/index.html' + (hash || '')) });
+  chrome.tabs.create({ url: workbenchUrl(hash) });
 }
 
 function fmtTime(ts) {

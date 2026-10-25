@@ -14,7 +14,7 @@
   const detect = NS.detect;
   const insert = NS.insert;
   const picker = NS.picker;
-  const V = '2.1.0';
+  const V = '2.1.1';
 
   const F = (window.__WB__ = window.__WB__ || {});
   F.v = V;

@@ -532,6 +532,16 @@ ui.draft = await popup.evaluate(async () => {
   return draft && draft.code ? draft.code.length : 0;
 });
 
+/* 回归：点「工作台」时，click 事件对象不能把 URL 拼坏。
+ * 曾经 openWorkbench 被直接绑到 click 上，第一个参数是 MouseEvent，
+ * 于是 URL 变成 workbench/index.html[object MouseEvent] → 找不到文件。 */
+ui.workbenchUrls = await popup.evaluate(() => ({
+  noArg: workbenchUrl(),
+  hash: workbenchUrl('#settings'),
+  withEvent: workbenchUrl(new MouseEvent('click')),
+  withObj: workbenchUrl({ type: 'click' })
+}));
+
 await popup.screenshot({ path: path.join(ROOT, 'tests', 'popup.png') });
 
 /* ---------------- 报告 ---------------- */
@@ -563,6 +573,15 @@ const checks = [
   ['工作台：历史卡片', wb.cards >= 1 && wb.hasClip, '卡片=' + wb.cards + ' 命中=' + wb.hasClip],
   ['工作台：片段视图', wb.snips >= 1, '命中=' + wb.snips],
   ['工作台：设置视图', wb.settings >= 3, '分区=' + wb.settings],
+  [
+    '工作台按钮 URL',
+    (() => {
+      const u = ui.workbenchUrls || {};
+      const plain = (s) => typeof s === 'string' && /\/workbench\/index\.html$/.test(s);
+      return plain(u.noArg) && plain(u.withEvent) && plain(u.withObj) && /#settings$/.test(u.hash || '');
+    })(),
+    JSON.stringify(ui.workbenchUrls)
+  ],
   ['工作台：无脚本错误', wb.errors.length === 0, wb.errors.slice(0, 2).join(' | ') || '无']
 ];
 for (const [name, ok, note] of checks) {
