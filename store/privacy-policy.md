@@ -63,19 +63,28 @@
 
 ### 2.2 键盘模拟
 
-当常规插入方式全部失败时，你可以选择让扩展「模拟键盘输入」把文字打进去。
+当常规插入方式全部失败时，可以选择让扩展「模拟键盘输入」把文字打进去。
 浏览器不允许网页脚本伪造真实按键，因此这条通道必须借助 Chrome 调试协议（CDP），
-需要 `debugger` 权限。该权限：
+需要 `debugger` 权限。
 
-- **不在安装时申请**，只在你在工作台点击「开启」时申请；
+**Chrome 不允许把 `debugger` 作为「可选权限」在运行时申请**（会直接报错），
+所以本扩展提供两个安装包，由你自行选择：
+
+| 版本 | 权限 | 键盘模拟 |
+| --- | --- | --- |
+| 标准版 | 不含 `debugger`，安装零警告 | 不可用（仍可用盲插处理检测不到的编辑器） |
+| 增强版 | 内置 `debugger`，安装时多一条「访问页面调试器后端」警告 | 可用 |
+
+增强版中该权限的行为：
+
 - 只在一次键入操作期间附加（通常 1–3 秒），操作结束立即断开；
-- 扩展只发送 `Input.insertText` 与 `Input.dispatchKeyEvent` 两类命令，
+- 只发送 `Input.insertText` 与 `Input.dispatchKeyEvent` 两类命令，
   不读取页面内容、不拦截网络、不修改任何其他数据；
 - 附加期间浏览器顶部会显示「正在调试此浏览器」提示条，断开后消失；
 - 目标标签页开着开发者工具时会失败，这是 Chrome 的限制；
-- 少数站点会检测调试器附加并拒绝服务，遇到时请关闭该功能。
+- 少数站点会检测调试器附加并拒绝服务。
 
-你随时可以在工作台里撤销该权限；撤销后扩展会自动关闭键盘模拟。
+不需要键盘模拟的话，安装标准版即可。
 
 ### 3. 页面访问
 
@@ -100,7 +109,7 @@
 | `storage` | 在本机保存草稿、历史、片段与偏好 |
 | `contextMenus` | 提供「保存到贴进去」等右键菜单项 |
 | `clipboardRead` / `clipboardWrite`（可选） | 仅在你点击相关按钮时申请，用于读取或写回系统剪贴板 |
-| `debugger`（可选） | 仅在你开启「键盘模拟」时申请；只在键入的几秒内附加，用完立即断开 |
+| `debugger`（仅增强版，必需） | 标准版不含此项；增强版安装时即授予，用于模拟键入，每次用完立即断开 |
 | `host_permissions`（可选） | 仅在你主动开启时申请，用于访问跨域 iframe |
 
 可选权限在安装时不会申请，也不会产生权限警告；只有你点击对应按钮时才会弹出一次授权询问。
@@ -174,17 +183,26 @@ You can delete entries individually, or clear everything at once (optionally kee
 
 When every regular insertion method fails, you may choose to have the Extension "simulate typing" the text instead.
 Browsers do not allow page scripts to forge real keystrokes, so this channel must use the Chrome DevTools Protocol (CDP)
-and requires the `debugger` permission. That permission:
+and requires the `debugger` permission.
 
-- is **not requested at install time** — only when you click "Enable" in the workbench;
-- is attached only for the duration of one typing operation (typically 1–3 seconds) and detached immediately afterwards;
-- is used solely to send `Input.insertText` and `Input.dispatchKeyEvent` commands — the Extension does not read page
+**Chrome does not allow `debugger` to be requested at runtime as an optional permission** (the request fails outright),
+so the Extension ships in two builds:
+
+| Build | Permission | Keyboard simulation |
+| --- | --- | --- |
+| Standard | no `debugger`; zero install warnings | unavailable (blind insert still works) |
+| Enhanced | `debugger` built in; adds an "Access the page debugger backend" warning at install | available |
+
+Behaviour of that permission in the Enhanced build:
+
+- attached only for the duration of one typing operation (typically 1–3 seconds), detached immediately afterwards;
+- used solely to send `Input.insertText` and `Input.dispatchKeyEvent` commands — the Extension does not read page
   content, intercept network traffic, or modify any other data;
-- causes a "is debugging this browser" infobar to appear while attached; it disappears after detaching;
+- causes an "is debugging this browser" infobar to appear while attached; it disappears after detaching;
 - fails when DevTools is open on the target tab — a Chrome limitation;
-- may be detected by a small number of anti-bot sites, which will refuse to serve content.
+- may be detected by a small number of anti-bot sites.
 
-You can revoke the permission at any time in the workbench; doing so automatically disables keyboard simulation.
+If you do not need keyboard simulation, install the Standard build.
 
 ### 3. Page access
 
@@ -207,7 +225,7 @@ If you **explicitly enable** host permissions in Settings (to reach cross-origin
 | `storage` | Save drafts, history, snippets and preferences locally |
 | `contextMenus` | Provide "Save to PasteBridge" context menu items |
 | `clipboardRead` / `clipboardWrite` (optional) | Requested only when you click the relevant buttons, to read or write the system clipboard |
-| `debugger` (optional) | Requested only when you enable keyboard simulation; attached for a few seconds per typing operation, then detached |
+| `debugger` (Enhanced build only, required) | Not present in the Standard build; granted at install in the Enhanced build, used for simulated typing and detached after each operation |
 | `host_permissions` (optional) | Requested only when you explicitly enable it, to reach cross-origin iframes |
 
 Optional permissions are not requested at install time and produce no install warning; the prompt appears only when you click the corresponding button.

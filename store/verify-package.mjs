@@ -48,15 +48,20 @@ else bad('popup 页面缺失');
 if (!mf.host_permissions) ok('没有 host_permissions（权限最小化，审核加分）');
 else bad('存在 host_permissions，审核时要额外解释');
 
-const ALLOWED = ['scripting', 'activeTab', 'storage', 'contextMenus'];
+const ALLOWED = ['scripting', 'activeTab', 'storage', 'contextMenus', 'debugger'];
 for (const p of mf.permissions || []) {
-  if (ALLOWED.includes(p)) ok('权限合理: ' + p);
+  if (p === 'debugger') {
+    console.log('  WARN  内置 debugger（增强版）：安装时会多一条「访问页面调试器后端」警告');
+  } else if (ALLOWED.includes(p)) ok('权限合理: ' + p);
   else bad('出现了意料之外的权限: ' + p);
 }
 
 const ALLOWED_OPT = ['clipboardRead', 'clipboardWrite', 'debugger'];
 for (const p of mf.optional_permissions || []) {
-  if (ALLOWED_OPT.includes(p)) ok('可选权限合理: ' + p);
+  if (p === 'debugger') {
+    // Chrome 会静默丢弃它，运行时申请必定失败，这里提前拦住
+    bad('debugger 不能作为可选权限（Chrome 会丢弃），请用 --with-debugger 打包');
+  } else if (ALLOWED_OPT.includes(p)) ok('可选权限合理: ' + p);
   else bad('出现了意料之外的可选权限: ' + p);
 }
 

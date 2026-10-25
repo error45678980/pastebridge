@@ -16,7 +16,7 @@
 importScripts('/lib/files.js', '/lib/store.js', '/lib/typing.js', '/lib/cdp.js');
 
 const PAGE_FILES = (self.PB_FILES && self.PB_FILES.page) || [];
-const V = '2.1.1';
+const V = '2.1.2';
 
 if (self.PBCdp) self.PBCdp.init();
 

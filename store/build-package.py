@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """打包 Edge Add-ons 提交包。
 
-用法：python store/build-package.py
-输出：store/package/pastebridge-<version>-edge.zip
+用法：
+    python store/build-package.py                 # 标准版（零权限警告，只有盲插）
+    python store/build-package.py --with-debugger # 增强版（内置 debugger，可用键盘模拟）
+
+输出：store/package/pastebridge-<version>-edge[-debugger].zip
+
+为什么要分两个版本：Chrome **不允许 `debugger` 作为可选权限**——
+写进 optional_permissions 会被静默丢弃，运行时申请必定失败
+（"Only permissions specified in the manifest may be requested"）。
+所以想用键盘模拟，只能把它放进必需的 permissions，
+代价是安装时会多一条「访问页面调试器后端」的警告。
 
 只收运行时需要的文件：manifest.json 必须在 zip 根目录，
 node_modules / demo / tests / tools / store 一律不进包。
@@ -10,6 +19,7 @@ node_modules / demo / tests / tools / store 一律不进包。
 
 import json
 import os
+import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,12 +60,24 @@ def collect():
 
 
 def main():
+    power = "--with-debugger" in sys.argv
+
     with open(os.path.join(ROOT, "manifest.json"), encoding="utf-8") as f:
         manifest = json.load(f)
     version = manifest["version"]
 
+    if power:
+        perms = list(manifest.get("permissions", []))
+        if "debugger" not in perms:
+            perms.append("debugger")
+        manifest["permissions"] = perms
+        manifest["optional_permissions"] = [
+            p for p in manifest.get("optional_permissions", []) if p != "debugger"
+        ]
+
     os.makedirs(OUT_DIR, exist_ok=True)
-    out = os.path.join(OUT_DIR, "pastebridge-%s-edge.zip" % version)
+    suffix = "-debugger" if power else ""
+    out = os.path.join(OUT_DIR, "pastebridge-%s-edge%s.zip" % (version, suffix))
     files = collect()
 
     # zipfile 的默认时间戳取文件 mtime，逐文件不同会让包不可复现；
@@ -67,11 +89,20 @@ def main():
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             with open(full, "rb") as f:
-                z.writestr(info, f.read())
+                data = f.read()
+            # 增强版只改包内这一份 manifest，不动源码
+            if power and rel == "manifest.json":
+                data = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+            z.writestr(info, data)
 
     size = os.path.getsize(out)
     print("\n打包完成：%s" % out)
-    print("版本 %s · %d 个文件 · %.1f KB\n" % (version, len(files), size / 1024))
+    print("版本 %s · %s · %d 个文件 · %.1f KB\n" % (
+        version,
+        "增强版（内置 debugger，可用键盘模拟）" if power else "标准版（零权限警告）",
+        len(files),
+        size / 1024,
+    ))
 
     with zipfile.ZipFile(out) as z:
         bad = z.testzip()

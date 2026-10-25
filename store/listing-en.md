@@ -86,9 +86,9 @@ Editors inside iframes work too: all subframes are scanned, and you pick when mo
 Two fallbacks when every regular method fails:
 
 · Blind insert — no extra permission needed. If the extension cannot recognise the target but you have already placed the caret in it, the text goes straight to the current focus. Editors inside closed shadow DOM work too.
-· Keyboard simulation — the optional last resort. It writes the whole string first, then falls back to per-character keystrokes for terminals and canvas-based editors that only listen to keydown.
+· Keyboard simulation — the last resort. It writes the whole string first, then falls back to per-character keystrokes for terminals and canvas-based editors that only listen to keydown.
 
-Keyboard simulation requires enabling a debugger permission; while attached, an "is debugging this browser" infobar appears briefly and disappears as soon as typing finishes. Not enabling it does not affect anything else.
+Keyboard simulation ships only in the "Enhanced" build: Chrome does not allow the debugger permission to be optional, so it has to be a built-in required permission. The Standard build does not include it, installs with zero warnings, and still supports blind insert. In the Enhanced build an "is debugging this browser" infobar appears briefly while typing and disappears as soon as it finishes.
 
 Two rules are hard-coded: line breaks are always Shift+Enter (never a bare Enter, which would send a chat message), and Tab is always replaced with spaces (so focus never leaves the editor).
 
@@ -112,14 +112,15 @@ A code pane plus a test-case pane, or a three-column online IDE, is the common c
 
 · No permission warning at install: only scripting, activeTab, storage and contextMenus
 · No host_permissions, no persistent content scripts — nothing is read until you click the icon
-· Clipboard reading and keyboard simulation are both optional permissions, requested only when you enable them
+· Clipboard reading is an optional permission, requested only when you click "Read clipboard"
+· Keyboard simulation ships only in the Enhanced build, which declares the debugger permission up front
 · All data stays in local browser storage; no upload, no network, no analytics
 · No remote code — every line ships inside the package
 
 ■ Known limitations
 
 · Closed shadow DOM can be blind-inserted, but the value cannot be read back, so the result is reported as unverified
-· Keyboard simulation needs an optional debugger permission and fails when DevTools is open on the target tab
+· Keyboard simulation is available only in the Enhanced build and fails when DevTools is open on the target tab
 · Per-character simulation is slow for long text (2,000 characters by default)
 · Cross-origin iframes require enabling one optional permission
 · Read-only editors are detected and skipped

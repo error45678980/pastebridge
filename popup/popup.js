@@ -407,7 +407,7 @@ function mapReason(reason) {
   if (!reason) return '插入失败';
   if (reason === 'no-editor') return '没有找到可插入的编辑器';
   if (reason === 'empty') return '没有内容可插入';
-  if (reason === 'debugger-denied') return '未授权键盘模拟（工作台 → 设置）';
+  if (reason === 'debugger-denied') return '当前安装包不含键盘模拟（需增强版）';
   if (reason === 'debugger-busy') return '调试器被占用，请关闭开发者工具';
   if (reason === 'debugger-detached') return '调试会话被中断';
   if (reason === 'timeout') return '键入超时，可能只打了一部分';
@@ -735,8 +735,8 @@ async function doType() {
   }
 
   if (!(await hasDebuggerPerm())) {
-    setChip('warn', '需先在工作台授权键盘模拟');
-    openWorkbench('#settings');
+    // Chrome 不允许 debugger 作为可选权限，只能在「增强版」安装包里内置
+    setChip('warn', '当前安装包不含键盘模拟（需增强版）');
     return;
   }
 

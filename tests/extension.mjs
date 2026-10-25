@@ -422,6 +422,14 @@ try {
   await page.waitForTimeout(400);
   wb.settings = await page.evaluate(() => document.querySelectorAll('#settingsView .set-card').length);
 
+  /* 键盘模拟卡必须如实反映可用性：
+   * Chrome 不允许 debugger 作为可选权限，所以不能出现「点一下就必然失败」的按钮。 */
+  wb.typingCard = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll('#settingsView .set-card'));
+    const c = cards.find((x) => x.textContent.indexOf('键盘模拟输入') >= 0);
+    return c ? c.textContent.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+  });
+
   await page.close();
 } catch (e) {
   wb.errors.push(e.message);
@@ -573,6 +581,11 @@ const checks = [
   ['工作台：历史卡片', wb.cards >= 1 && wb.hasClip, '卡片=' + wb.cards + ' 命中=' + wb.hasClip],
   ['工作台：片段视图', wb.snips >= 1, '命中=' + wb.snips],
   ['工作台：设置视图', wb.settings >= 3, '分区=' + wb.settings],
+  [
+    '工作台：键入卡如实显示',
+    /已内置调试权限|当前安装包不含键盘模拟/.test(wb.typingCard || ''),
+    (wb.typingCard || '').slice(0, 60)
+  ],
   [
     '工作台按钮 URL',
     (() => {

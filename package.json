@@ -6,6 +6,8 @@
   "scripts": {
     "icons": "python tools/make-icons.py",
     "demo": "python -m http.server 8080 --directory demo",
+    "pack": "python store/build-package.py",
+    "pack:debugger": "python store/build-package.py --with-debugger",
     "test": "node tests/e2e.mjs",
     "test:ext": "node tests/extension.mjs",
     "test:store": "node tests/store.mjs",

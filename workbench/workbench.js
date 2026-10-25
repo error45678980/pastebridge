@@ -178,31 +178,15 @@ function requestHostPerm() {
     .catch((e) => toast('授权失败：' + ((e && e.message) || e), 'err'));
 }
 
-/* 键盘模拟需要 debugger 权限——这是本扩展权限最重的一项，
- * 所以同样只在用户点击的同一个任务里申请，且默认不开启。 */
-function requestDebuggerPerm() {
-  chrome.permissions
-    .request({ permissions: ['debugger'] })
-    .then((granted) => {
-      toast(
-        granted ? '已开启键盘模拟' : '未授权',
-        granted ? 'ok' : 'err'
-      );
-      if (granted) PBStore.saveSettings({ typing: { on: true } }).catch(() => {});
-      renderSettings();
-    })
-    .catch((e) => toast('授权失败：' + ((e && e.message) || e), 'err'));
-}
-
-function removeDebuggerPerm() {
-  chrome.permissions
-    .remove({ permissions: ['debugger'] })
-    .then((removed) => {
-      toast(removed ? '已撤销键盘模拟权限' : '撤销失败', removed ? 'ok' : 'err');
-      PBStore.saveSettings({ typing: { on: false } }).catch(() => {});
-      renderSettings();
-    })
-    .catch((e) => toast('撤销失败：' + ((e && e.message) || e), 'err'));
+/* Chrome **不允许 debugger 作为可选权限**：写进 optional_permissions 会被静默丢弃，
+ * 运行时 chrome.permissions.request 必定抛 "Only permissions specified in the manifest
+ * may be requested"。所以它只能来自「增强版」安装包里的必需权限。 */
+function debuggerDeclared() {
+  try {
+    return (chrome.runtime.getManifest().permissions || []).indexOf('debugger') >= 0;
+  } catch (_) {
+    return false;
+  }
 }
 
 async function readClipboard() {
@@ -524,52 +508,87 @@ async function renderSettings() {
 
   /* 键盘模拟 */
   const typing = st.typing || {};
-  const typingCard = el('div', { class: 'set-card' }, [
-    el('h3', { text: '键盘模拟输入（最后手段）' }),
-    el('div', { class: 'row' }, [
-      el('div', { class: 'lbl' }, [
-        el('span', { text: dbgPerm ? '已授权调试权限' : '未授权' }),
-        el('small', {
-          text: dbgPerm
-            ? '插入失败时可以把文字像人一样打进去（含终端、画布类编辑器）'
-            : '需要 debugger 权限；使用时浏览器顶部会短暂显示一条调试提示条'
-        })
+  const typingKids = [el('h3', { text: '键盘模拟输入（最后手段）' })];
+
+  if (dbgPerm) {
+    typingKids.push(
+      el('div', { class: 'row' }, [
+        el('div', { class: 'lbl' }, [
+          el('span', { text: '已内置调试权限' }),
+          el('small', {
+            text: '插入失败时可以把文字像人一样打进去（含终端、画布类编辑器）'
+          })
+        ]),
+        el('span', { class: 'tag', text: '可用' })
       ]),
-      dbgPerm
-        ? el('button', { class: 'btn', text: '撤销', onclick: () => removeDebuggerPerm() })
-        : el('button', { class: 'btn', text: '开启', onclick: () => requestDebuggerPerm() })
-    ]),
-    switchRow('插入失败时自动改用', '不用手动点按钮；逐字模式较慢，长文本慎用', !!typing.autoFallback, async (v) => {
-      await PBStore.saveSettings({ typing: { autoFallback: v } });
-      renderSettings();
-    }),
-    selectRow(
-      '键入方式',
-      '自动 = 先整段写入，无效再逐字',
-      typing.mode || 'auto',
-      [
-        { value: 'auto', label: '自动（推荐）' },
-        { value: 'insert', label: '只整段写入' },
-        { value: 'keys', label: '只逐字模拟' }
-      ],
-      async (v) => {
-        await PBStore.saveSettings({ typing: { mode: v } });
-        toast('已保存', 'ok');
-      }
-    ),
-    numberRow('逐字上限', '超过这个长度会截断——逐字很慢', typing.maxChars || 2000, 200, 2000, async (v) => {
-      await PBStore.saveSettings({ typing: { maxChars: v } });
-      toast('已保存', 'ok');
-    }),
-    el('div', { class: 'row' }, [
-      el('div', { class: 'lbl' }, [
-        el('span', { text: '使用须知' }),
-        el('small', {
-          text: '只在需要时附加调试器、用完立即断开；目标标签页开着开发者工具时会失败。'
-        })
+      switchRow(
+        '插入失败时自动改用',
+        '不用手动点按钮；逐字模式较慢，长文本慎用',
+        !!typing.autoFallback,
+        async (v) => {
+          await PBStore.saveSettings({ typing: { autoFallback: v } });
+          renderSettings();
+        }
+      ),
+      selectRow(
+        '键入方式',
+        '自动 = 先整段写入，无效再逐字',
+        typing.mode || 'auto',
+        [
+          { value: 'auto', label: '自动（推荐）' },
+          { value: 'insert', label: '只整段写入' },
+          { value: 'keys', label: '只逐字模拟' }
+        ],
+        async (v) => {
+          await PBStore.saveSettings({ typing: { mode: v } });
+          toast('已保存', 'ok');
+        }
+      ),
+      numberRow(
+        '逐字上限',
+        '超过这个长度会截断——逐字很慢',
+        typing.maxChars || 2000,
+        200,
+        2000,
+        async (v) => {
+          await PBStore.saveSettings({ typing: { maxChars: v } });
+          toast('已保存', 'ok');
+        }
+      ),
+      el('div', { class: 'row' }, [
+        el('div', { class: 'lbl' }, [
+          el('span', { text: '使用须知' }),
+          el('small', {
+            text: '只在需要时附加调试器、用完立即断开；目标标签页开着开发者工具时会失败。'
+          })
+        ])
       ])
-    ])
-  ]);
+    );
+  } else {
+    typingKids.push(
+      el('div', { class: 'row' }, [
+        el('div', { class: 'lbl' }, [
+          el('span', { text: '当前安装包不含键盘模拟' }),
+          el('small', {
+            text:
+              'Chrome 不允许把调试权限（debugger）作为可选权限，所以它只能内置在「增强版」安装包里。' +
+              '标准版仍可用盲插处理检测不到的编辑器。'
+          })
+        ]),
+        el('span', { class: 'tag', text: '不可用' })
+      ]),
+      el('div', { class: 'row' }, [
+        el('div', { class: 'lbl' }, [
+          el('span', { text: '怎么启用' }),
+          el('small', {
+            text: '在项目里执行 python store/build-package.py --with-debugger，用生成的增强版包重新加载扩展。'
+          })
+        ])
+      ])
+    );
+  }
+
+  const typingCard = el('div', { class: 'set-card' }, typingKids);
 
   /* 剪贴板权限 */
   const permCard = el('div', { class: 'set-card' }, [
